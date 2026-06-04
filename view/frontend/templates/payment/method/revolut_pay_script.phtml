@@ -1,0 +1,178 @@
+<?php
+declare(strict_types=1);
+
+/** @var \Magento\Framework\View\Element\Template $block */
+?>
+<script>
+    (() => {
+        hyvaCheckout.api.after(() => {
+            const revolutConfig = <?= $block->getRevolutConfig() ?>;
+            let paymentsInstance = null;
+            let revolutCheckout = null;
+
+            const getWireComponent = () => {
+                return Magewire.find('checkout.payment.method.revolut_pay');
+            }
+
+            const loadSdk = () => {
+                return new Promise((resolve) => {
+                    if (window.RevolutCheckout) {
+                        resolve(window.RevolutCheckout);
+                        return;
+                    }
+                    if (!revolutConfig || !revolutConfig.revolutSdk) {
+                        resolve(null);
+                        return;
+                    }
+                    const script = document.createElement('script');
+                    script.src = revolutConfig.revolutSdk;
+                    script.onload = () => resolve(window.RevolutCheckout);
+                    document.head.appendChild(script);
+                });
+            };
+
+            const getMinorAmount = (amount, currency) => {
+                const options = { style: 'currency', currency };
+                const numberFormat = new Intl.NumberFormat('en-GB', options);
+                const parts = numberFormat.formatToParts(amount);
+                const fractionPart = parts.find(part => part.type === 'fraction');
+                const fractionalLength = fractionPart ? fractionPart.value.length : 0;
+                const minorUnitFactor = Math.pow(10, fractionalLength);
+
+                return Math.round(amount * minorUnitFactor);
+            };
+
+            const showLoader = () => window.dispatchEvent(new Event('magewire:loader:start'));
+            const hideLoader = () => window.dispatchEvent(new Event('magewire:loader:done'));
+
+            const hidePlaceOrderButton = () => {
+                hyvaCheckout.navigation.disableButtonPlaceOrder();
+                const navMain = document.querySelector('.checkout-nav-main');
+                if (navMain) navMain.style.display = 'none';
+            };
+
+            const showPlaceOrderButton = () => {
+                hyvaCheckout.navigation.enableButtonPlaceOrder();
+                const navMain = document.querySelector('.checkout-nav-main');
+                if (navMain) navMain.style.display = '';
+            };
+
+            const mountRevolutPay = () => {
+                if (!revolutCheckout) return;
+
+                const targetEl = document.getElementById('revolut-pay-component');
+                if (!targetEl || paymentsInstance) return;
+
+                paymentsInstance = revolutCheckout.payments({
+                    locale: revolutConfig.locale,
+                    publicToken: revolutConfig.publicKey,
+                });
+
+                const container = targetEl.parentElement;
+                const email = container.getAttribute('data-revolut-email') || '';
+                const name = container.getAttribute('data-revolut-name') || '';
+                const phone = container.getAttribute('data-revolut-phone') || '';
+                const currency = container.getAttribute('data-revolut-currency');
+                const amount = getMinorAmount(parseFloat(container.getAttribute('data-revolut-amount')), currency);
+                const buttonStyle = revolutConfig.revButtonStyle || {};
+
+                const paymentOptions = {
+                    currency: currency,
+                    totalAmount: amount,
+                    validate: async () => {
+                        return await hyvaCheckout.validation.validate();
+                    },
+                    createOrder: async () => {
+                        const wire = getWireComponent();
+                        if (wire) {
+                            await wire.call('initializeRevolutOrder');
+                            return { publicId: wire.get('publicId') };
+                        }
+                        return { publicId: null };
+                    },
+                    customer: {
+                        name: name,
+                        email: email,
+                        phone: phone,
+                    },
+                    buttonStyle: {
+                        radius: 'none',
+                        height: '50px',
+                        cashback: buttonStyle.cashback || false,
+                        cashbackCurrency: currency
+                    },
+                    __metadata: {
+                        environment: 'magento',
+                        context: 'checkout',
+                        origin_url: window.location.origin,
+                    },
+                    mobileRedirectUrls: {
+                        success: revolutConfig.redirectUrl,
+                        failure: revolutConfig.checkoutUrl,
+                        cancel: revolutConfig.checkoutUrl,
+                    }
+                };
+
+                paymentsInstance.revolutPay.mount(targetEl, paymentOptions);
+                hidePlaceOrderButton();
+
+                paymentsInstance.revolutPay.on('payment', async (event) => {
+                    switch (event.type) {
+                        case 'success':
+                            showLoader();
+                            const result = await hyvaCheckout.order.place();
+
+                            if (!result) {
+                                hideLoader();
+                                showPlaceOrderButton();
+                            }
+                            break;
+                        case 'error':
+                            hideLoader();
+                            showPlaceOrderButton();
+                            hyvaCheckout.payment.dispatchExceptionMessage(event.error.message || 'An error occurred', 'error');
+                            break;
+                    }
+                });
+            };
+
+            const remountRevolutPay = () => {
+                if (!paymentsInstance) return;
+
+                paymentsInstance.destroy();
+                paymentsInstance = null;
+                mountRevolutPay();
+            };
+
+            window.addEventListener('payment:method:refresh', remountRevolutPay);
+
+            hyvaCheckout.payment.registerMethod({
+                code: 'revolut_pay',
+
+                method: {
+                    initialize: async function () {
+                        const RevolutCheckout = await loadSdk();
+                        if (!RevolutCheckout) return;
+
+                        revolutCheckout = RevolutCheckout;
+                        mountRevolutPay();
+                    },
+
+                    uninitialize: async function () {
+                        showPlaceOrderButton();
+
+                        if (paymentsInstance) {
+                            paymentsInstance.destroy();
+                            paymentsInstance = null;
+                        }
+                    },
+
+                    validate: async function() {
+                        return true;
+                    },
+                }
+            });
+        });
+    })();
+</script>
+<?php isset($hyvaCsp) && $hyvaCsp->registerInlineScript() ?>

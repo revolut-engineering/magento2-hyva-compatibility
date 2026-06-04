@@ -1,0 +1,25 @@
+{
+  "name": "revolut/module-payment-hyva-checkout",
+  "description": "Hyvä Checkout compatibility for the Revolut payment module",
+  "type": "magento2-module",
+  "license": "MIT",
+  "require": {
+    "php": ">=7.4",
+    "revolut/module-payment": "^2.1",
+    "hyva-themes/magento2-hyva-checkout": "^1.1",
+    "magewirephp/magewire": "^1.13"
+  },
+  "autoload": {
+    "files": [
+      "registration.php"
+    ],
+    "psr-4": {
+      "Revolut\\PaymentHyva\\": ""
+    }
+  },
+  "config": {
+    "allow-plugins": {
+      "composer/installers": true
+    }
+  }
+}

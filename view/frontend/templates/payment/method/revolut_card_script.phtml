@@ -1,0 +1,177 @@
+<?php
+declare(strict_types=1);
+
+/** @var \Magento\Framework\View\Element\Template $block */
+?>
+<script>
+    (() => {
+        hyvaCheckout.api.after(() => {
+            const revolutConfig = <?= $block->getRevolutConfig() ?>;
+            let revolutSdk = null;
+            let cardInstance = null;
+            let placeOrderFallback = null;
+            let placeOrderReject = null;
+
+            const getWireComponent = () => {
+                return Magewire.find('checkout.payment.method.revolut_card');
+            };
+
+            const loadSdk = () => {
+                return new Promise((resolve) => {
+                    if (window.RevolutCheckout) {
+                        resolve(window.RevolutCheckout);
+                        return;
+                    }
+                    if (!revolutConfig || !revolutConfig.revolutSdk) {
+                        resolve(null);
+                        return;
+                    }
+                    const script = document.createElement('script');
+                    script.src = revolutConfig.revolutSdk;
+                    script.onload = () => resolve(window.RevolutCheckout);
+                    document.head.appendChild(script);
+                });
+            };
+
+            const showLoader = () => window.dispatchEvent(new Event('magewire:loader:start'));
+            const hideLoader = () => window.dispatchEvent(new Event('magewire:loader:done'));
+
+            hyvaCheckout.payment.registerMethod({
+                code: 'revolut_card',
+
+                method: {
+                    initialize: async function () {
+                        const wireComponent = getWireComponent();
+                        if (!wireComponent) return;
+
+                        const publicId = await wireComponent.get('publicId');
+                        if (!publicId) return;
+
+                        const RevolutCheckout = await loadSdk();
+                        if (!RevolutCheckout) return;
+
+                        revolutSdk = await RevolutCheckout(publicId);
+
+                        const targetEl = document.getElementById('revolut-card-component');
+                        if (targetEl) {
+                            if (cardInstance) {
+                                cardInstance.destroy();
+                                cardInstance = null;
+                            }
+
+                            cardInstance = revolutSdk.createCardField({
+                                target: targetEl,
+                                locale: revolutConfig.locale,
+                                onSuccess: async () => {
+                                    if (placeOrderFallback) {
+                                        await placeOrderFallback();
+                                        placeOrderFallback = null;
+                                    }
+                                },
+                                onError: (messages) => {
+                                    hyvaCheckout.payment.dispatchExceptionMessage(messages.message || 'Payment error', 'error');
+                                    hideLoader();
+
+                                    if (placeOrderReject) {
+                                        placeOrderReject(messages.message);
+                                        placeOrderReject = null;
+                                    }
+                                },
+                                onValidation: (messages) => {
+                                    if (!Array.isArray(messages)) {
+                                        return;
+                                    }
+
+                                    const errorDiv = document.getElementById('revolut-card-errors');
+                                    if (!errorDiv) return;
+
+                                    if (messages.length === 0) {
+                                        errorDiv.innerHTML = '';
+                                        errorDiv.style.display = 'none';
+                                        return;
+                                    }
+
+                                    errorDiv.innerHTML = '';
+                                    messages.forEach(msg => {
+                                        const li = document.createElement('li');
+                                        li.innerText = msg;
+                                        errorDiv.appendChild(li);
+                                    });
+                                    errorDiv.style.display = 'block';
+
+                                    if (placeOrderReject) {
+                                        hideLoader();
+                                        placeOrderReject();
+                                        placeOrderReject = null;
+                                    }
+                                }
+                            });
+                        }
+                    },
+
+                    uninitialize: async function () {
+                        if (cardInstance) {
+                            cardInstance.destroy();
+                            cardInstance = null;
+                        }
+                    },
+
+                    handleException: async function({ exception, fallback }) {
+                        await fallback({ exception: exception });
+                    },
+
+                    placeOrder: async function({ fallback }) {
+                        if (!cardInstance) {
+                            hyvaCheckout.payment.dispatchExceptionMessage('The payment widget could not be initialized correctly.', 'error');
+                            throw new Error('Card widget not initialized');
+                        }
+
+                        const wire = getWireComponent();
+                        showLoader();
+
+                        try {
+                            // Sync order totals
+                            await wire.call('initializeRevolutOrder');
+
+                            // Sync quote data from server before submission
+                            await wire.call('syncQuoteData');
+
+                            const billing = wire.get('billingAddress');
+                            const email = wire.get('email');
+
+                            if (!email || !billing || !billing.city) {
+                                hyvaCheckout.payment.dispatchExceptionMessage('Please provide your billing and email address.', 'error');
+                                throw new Error('Missing billing or email address');
+                            }
+
+                            placeOrderFallback = fallback;
+
+                            return await new Promise((resolve, reject) => {
+                                placeOrderReject = reject;
+                                cardInstance.submit({
+                                    email: email,
+                                    phone: billing.telephone || '',
+                                    name: `${billing.firstname} ${billing.lastname}`.trim(),
+                                    orderUpdated: true,
+                                    billingAddress: {
+                                        countryCode: billing.countryCode,
+                                        city: billing.city,
+                                        streetLine1: billing.streetLine1,
+                                        streetLine2: billing.streetLine2,
+                                        postcode: billing.postcode
+                                    }
+                                });
+                            });
+                        } catch (e) {
+                            hideLoader();
+                            placeOrderReject = null;
+                            placeOrderFallback = null;
+                            throw e;
+                        }
+                    },
+                }
+            });
+        });
+    })();
+</script>
+<?php isset($hyvaCsp) && $hyvaCsp->registerInlineScript() ?>

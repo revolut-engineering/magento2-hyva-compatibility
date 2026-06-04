@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <body>
+        <referenceBlock name="checkout.payment.methods">
+            <block name="checkout.payment.method.revolut_card"
+                   as="revolut_card"
+                   template="Revolut_PaymentHyva::payment/method/revolut_card.phtml"
+                   sortOrder="10">
+                <arguments>
+                    <argument name="magewire" xsi:type="object">Revolut\PaymentHyva\Magewire\Checkout\Payment\Method\RevolutCard</argument>
+                </arguments>
+            </block>
+
+            <block name="checkout.payment.method.revolut_pay"
+                   as="revolut_pay"
+                   template="Revolut_PaymentHyva::payment/method/revolut_pay.phtml"
+                   sortOrder="20">
+                <arguments>
+                    <argument name="magewire" xsi:type="object">Revolut\PaymentHyva\Magewire\Checkout\Payment\Method\RevolutPay</argument>
+                </arguments>
+            </block>
+
+            <block name="checkout.payment.method.revolut_payment_request"
+                   as="revolut_payment_request"
+                   template="Revolut_PaymentHyva::payment/method/revolut_payment_request.phtml"
+                   sortOrder="30">
+                <arguments>
+                    <argument name="magewire" xsi:type="object">Revolut\PaymentHyva\Magewire\Checkout\Payment\Method\RevolutPaymentRequest</argument>
+                </arguments>
+            </block>
+        </referenceBlock>
+    </body>
+</page>

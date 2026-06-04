@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <body>
+        <referenceContainer name="magewire.plugin.scripts">
+            <block name="checkout.payment.methods.after.revolut_card"
+                   as="revolut_card_script"
+                   class="Revolut\PaymentHyva\Block\Checkout\Payment\RevolutScript"
+                   template="Revolut_PaymentHyva::payment/method/revolut_card_script.phtml"
+                   ifconfig="payment/revolut_card/active" />
+            
+            <block name="checkout.payment.methods.after.revolut_pay"
+                   as="revolut_pay_script"
+                   class="Revolut\PaymentHyva\Block\Checkout\Payment\RevolutScript"
+                   template="Revolut_PaymentHyva::payment/method/revolut_pay_script.phtml"
+                   ifconfig="payment/revolut_pay/active" />
+            
+            <block name="checkout.payment.methods.after.revolut_payment_request"
+                   as="revolut_payment_request_script"
+                   class="Revolut\PaymentHyva\Block\Checkout\Payment\RevolutScript"
+                   template="Revolut_PaymentHyva::payment/method/revolut_payment_request_script.phtml"
+                   ifconfig="payment/revolut_payment_request/active" />
+        </referenceContainer>
+    </body>
+</page>
