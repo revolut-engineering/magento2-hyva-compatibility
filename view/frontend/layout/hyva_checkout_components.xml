@@ -4,8 +4,7 @@
         <referenceBlock name="checkout.payment.methods">
             <block name="checkout.payment.method.revolut_card"
                    as="revolut_card"
-                   template="Revolut_PaymentHyva::payment/method/revolut_card.phtml"
-                   sortOrder="10">
+                   template="Revolut_PaymentHyva::payment/method/revolut_card.phtml">
                 <arguments>
                     <argument name="magewire" xsi:type="object">Revolut\PaymentHyva\Magewire\Checkout\Payment\Method\RevolutCard</argument>
                 </arguments>
@@ -14,7 +13,7 @@
             <block name="checkout.payment.method.revolut_pay"
                    as="revolut_pay"
                    template="Revolut_PaymentHyva::payment/method/revolut_pay.phtml"
-                   sortOrder="20">
+                   after="checkout.payment.method.revolut_card">
                 <arguments>
                     <argument name="magewire" xsi:type="object">Revolut\PaymentHyva\Magewire\Checkout\Payment\Method\RevolutPay</argument>
                 </arguments>
@@ -23,7 +22,7 @@
             <block name="checkout.payment.method.revolut_payment_request"
                    as="revolut_payment_request"
                    template="Revolut_PaymentHyva::payment/method/revolut_payment_request.phtml"
-                   sortOrder="30">
+                   after="checkout.payment.method.revolut_pay">
                 <arguments>
                     <argument name="magewire" xsi:type="object">Revolut\PaymentHyva\Magewire\Checkout\Payment\Method\RevolutPaymentRequest</argument>
                 </arguments>
