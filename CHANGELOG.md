@@ -1,4 +1,8 @@
 # Changelog
+## 1.1.1
+- Added support for the cardholder name and hide-postcode card options
+- Fixed an error on the checkout card form
+
 ## 1.1.0
 - Added reward banner on the order confirmation page
 - Added gateway banner and card brand icons to the checkout

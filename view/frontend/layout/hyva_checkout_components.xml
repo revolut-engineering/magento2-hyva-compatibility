@@ -4,6 +4,7 @@
         <referenceBlock name="checkout.payment.methods">
             <block name="checkout.payment.method.revolut_card"
                    as="revolut_card"
+                   class="Revolut\PaymentHyva\Block\Checkout\Payment\RevolutScript"
                    template="Revolut_PaymentHyva::payment/method/revolut_card.phtml">
                 <arguments>
                     <argument name="magewire" xsi:type="object">Revolut\PaymentHyva\Magewire\Checkout\Payment\Method\RevolutCard</argument>
