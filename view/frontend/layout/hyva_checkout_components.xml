@@ -28,5 +28,17 @@
                 </arguments>
             </block>
         </referenceBlock>
+
+        <referenceContainer name="checkout.price-summary.section">
+            <block name="revolut.points.banner"
+                   class="Revolut\PaymentHyva\Block\Checkout\PointsBanner"
+                   template="Revolut_PaymentHyva::checkout/revpoints_banner.phtml"
+                   after="price-summary.total-segments"
+                   ifconfig="payment/revolut_pay/active">
+                <arguments>
+                    <argument name="hyvaCsp" xsi:type="object">Hyva\Theme\ViewModel\HyvaCsp</argument>
+                </arguments>
+            </block>
+        </referenceContainer>
     </body>
 </page>

@@ -10,6 +10,11 @@ class RevolutScript extends Template
 {
     private ConfigProvider $configProvider;
 
+    /**
+     * @param Template\Context $context
+     * @param ConfigProvider $configProvider
+     * @param array<string,mixed> $data
+     */
     public function __construct(
         Template\Context $context,
         ConfigProvider $configProvider,
@@ -22,6 +27,12 @@ class RevolutScript extends Template
     public function getRevolutConfig(): string
     {
         $config = $this->configProvider->getConfig();
-        return json_encode($config['payment']['revolut'] ?? []);
+        return (string) json_encode($config['payment']['revolut'] ?? []);
+    }
+
+    public function isCardholderNameFieldEnabled(): bool
+    {
+        $config = $this->configProvider->getConfig();
+        return (bool) ($config['payment']['revolut']['cardholderNameField'] ?? false);
     }
 }

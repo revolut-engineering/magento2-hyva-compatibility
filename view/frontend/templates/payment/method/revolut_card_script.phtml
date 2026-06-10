@@ -9,6 +9,7 @@ declare(strict_types=1);
             const revolutConfig = <?= $block->getRevolutConfig() ?>;
             let revolutSdk = null;
             let cardInstance = null;
+            let upsellInstance = null;
             let placeOrderFallback = null;
             let placeOrderReject = null;
 
@@ -31,6 +32,68 @@ declare(strict_types=1);
                     script.onload = () => resolve(window.RevolutCheckout);
                     document.head.appendChild(script);
                 });
+            };
+
+            const destroyUpsellInstance = () => {
+                if (upsellInstance) {
+                    upsellInstance.destroy();
+                    upsellInstance = null;
+                }
+            };
+
+            const loadBannerSdk = () => {
+                return new Promise((resolve) => {
+                    if (window.RevolutUpsell) {
+                        resolve(window.RevolutUpsell);
+                        return;
+                    }
+                    if (!revolutConfig || !revolutConfig.revolutBannerSdk) {
+                        resolve(null);
+                        return;
+                    }
+                    const existingScript = document.getElementById('revolut-banner-sdk');
+                    if (existingScript) {
+                        existingScript.addEventListener('load', () => resolve(window.RevolutUpsell));
+                        existingScript.addEventListener('error', () => resolve(null));
+                        return;
+                    }
+                    const script = document.createElement('script');
+                    script.id = 'revolut-banner-sdk';
+                    script.src = revolutConfig.revolutBannerSdk;
+                    script.onload = () => resolve(window.RevolutUpsell);
+                    script.onerror = () => resolve(null);
+                    document.head.appendChild(script);
+                });
+            };
+
+            const mountGatewayBanner = async (publicId) => {
+                // Always tear down a previously mounted banner so a disabled/empty re-init clears it.
+                destroyUpsellInstance();
+
+                const bannersData = revolutConfig.informationalBannersData || {};
+                if (!bannersData.isGatewayBannerEnabled || !publicId) {
+                    return;
+                }
+
+                const targetEl = document.getElementById('revolut-upsell-banner-element');
+                if (!targetEl) return;
+
+                const RevolutUpsell = await loadBannerSdk();
+                if (!RevolutUpsell) return;
+
+                try {
+                    upsellInstance = RevolutUpsell({
+                        locale: revolutConfig.locale,
+                        publicToken: revolutConfig.publicKey,
+                    });
+
+                    upsellInstance.cardGatewayBanner.mount(targetEl, {
+                        orderToken: publicId,
+                    });
+                } catch (e) {
+                    console.error('Failed to mount Revolut gateway banner', e);
+                    destroyUpsellInstance();
+                }
             };
 
             const showLoader = () => window.dispatchEvent(new Event('magewire:loader:start'));
@@ -62,6 +125,8 @@ declare(strict_types=1);
                             cardInstance = revolutSdk.createCardField({
                                 target: targetEl,
                                 locale: revolutConfig.locale,
+                                hidePostcodeField: revolutConfig.hidePostcodeField,
+                                showLoadingIndicator: true,
                                 onSuccess: async () => {
                                     if (placeOrderFallback) {
                                         await placeOrderFallback();
@@ -107,6 +172,8 @@ declare(strict_types=1);
                                 }
                             });
                         }
+
+                        await mountGatewayBanner(publicId);
                     },
 
                     uninitialize: async function () {
@@ -114,6 +181,7 @@ declare(strict_types=1);
                             cardInstance.destroy();
                             cardInstance = null;
                         }
+                        destroyUpsellInstance();
                     },
 
                     handleException: async function({ exception, fallback }) {
@@ -144,6 +212,14 @@ declare(strict_types=1);
                                 throw new Error('Missing billing or email address');
                             }
 
+                            let name;
+                            if (revolutConfig.cardholderNameField) {
+                                const cardholderInput = document.getElementById('revolut-card-cardholder-name');
+                                name = cardholderInput ? cardholderInput.value.trim() : '';
+                            } else {
+                                name = `${billing.firstname} ${billing.lastname}`.trim();
+                            }
+
                             placeOrderFallback = fallback;
 
                             return await new Promise((resolve, reject) => {
@@ -151,7 +227,7 @@ declare(strict_types=1);
                                 cardInstance.submit({
                                     email: email,
                                     phone: billing.telephone || '',
-                                    name: `${billing.firstname} ${billing.lastname}`.trim(),
+                                    name: name,
                                     orderUpdated: true,
                                     billingAddress: {
                                         countryCode: billing.countryCode,

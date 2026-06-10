@@ -19,6 +19,10 @@ abstract class AbstractRevolutMethod extends Component\Form implements Evaluatio
 {
     public ?string $publicId = null;
     public ?string $email = null;
+
+    /**
+     * @var array<string, mixed>
+     */
     public array $billingAddress = [];
 
     protected SessionCheckout $sessionCheckout;
@@ -26,6 +30,9 @@ abstract class AbstractRevolutMethod extends Component\Form implements Evaluatio
     protected CartRepositoryInterface $quoteRepository;
     protected LoggerInterface $logger;
 
+    /**
+     * @var array<string, string>
+     */
     protected $listeners = [
         'billing_address_activated' => 'refresh',
         'billing_as_shipping_address_updated' => 'refresh',

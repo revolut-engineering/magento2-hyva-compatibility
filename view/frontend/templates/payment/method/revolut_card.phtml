@@ -1,11 +1,25 @@
 <?php
 declare(strict_types=1);
 
-/** @var \Magento\Framework\View\Element\Template $block */
+/** @var \Revolut\PaymentHyva\Block\Checkout\Payment\RevolutScript $block */
 /** @var \Revolut\PaymentHyva\Magewire\Checkout\Payment\Method\RevolutCard $magewire */
+/** @var \Magento\Framework\Escaper $escaper */
 ?>
 <div>
     <!-- Container for revolut card UI -->
     <div id="revolut-card-component" class="mt-4 border border-gray-300 rounded-md p-3 bg-white w-full min-h-[45px]" wire:ignore></div>
     <ul id="revolut-card-errors" class="text-red-600 mt-2 text-sm list-disc list-inside pl-2" style="display: none;"></ul>
+
+    <?php if ($block->isCardholderNameFieldEnabled()): ?>
+        <div id="revolut-cardholder-name-container" class="mt-4" wire:ignore>
+            <input type="text"
+                   id="revolut-card-cardholder-name"
+                   name="cardholderName"
+                   class="form-input w-full rounded-md border-gray-300"
+                   placeholder="<?= $escaper->escapeHtmlAttr(__('Cardholder Name')) ?>" />
+        </div>
+    <?php endif; ?>
+
+    <!-- Container for revolut informational gateway banner -->
+    <div id="revolut-upsell-banner-element" class="mt-4" wire:ignore></div>
 </div>

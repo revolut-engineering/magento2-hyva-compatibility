@@ -1,0 +1,99 @@
+<?php
+/** @var \Revolut\Payment\Block\OrderConfirmation\RewardBannerBlock $block */
+/** @var \Magento\Framework\Escaper $escaper */
+?>
+<div id="revolut-reward-banner-widget"></div>
+
+<script>
+    (() => {
+        const config = <?= $block->getOrderDetails() ?>;
+        
+        if (!config || !config.isRewardBannerActive) {
+            return;
+        }
+
+        const loadSdk = () => {
+            return new Promise((resolve, reject) => {
+                if (window.RevolutUpsell) {
+                    resolve(window.RevolutUpsell);
+                    return;
+                }
+
+                const existingScript = document.getElementById('revolut-checkout');
+                if (existingScript) {
+                    existingScript.addEventListener('load', () => resolve(window.RevolutUpsell));
+                    existingScript.addEventListener('error', () => reject(new Error('Failed to load Revolut Banner SDK')));
+                    return;
+                }
+
+                const script = document.createElement('script');
+                script.id = 'revolut-checkout';
+                script.src = config.revolutBannerSdk;
+                script.onload = () => resolve(window.RevolutUpsell);
+                script.onerror = () => reject(new Error('Failed to load Revolut Banner SDK'));
+                document.head.appendChild(script);
+            });
+        };
+
+        const init = async () => {
+            let RevolutUpsell;
+            try {
+                RevolutUpsell = await loadSdk();
+            } catch (e) {
+                console.error(e);
+                return;
+            }
+
+            if (!RevolutUpsell) {
+                return;
+            }
+
+            const widget = document.getElementById('revolut-reward-banner-widget');
+            document.querySelectorAll('.revolut-pay-register-banner-container').forEach(el => el.remove());
+
+            const titleWrapper = document.querySelector('.page-title-wrapper');
+            if (titleWrapper && widget) {
+                titleWrapper.after(widget);
+            }
+
+            const upsell = RevolutUpsell({
+                locale: config.locale,
+                publicToken: config.merchantPublicKey,
+            });
+
+            const customer = {
+                email: config.email,
+                phone: config.phone,
+            };
+            const metadata = { channel: 'magento2' };
+
+            switch (config.paymentMethodCode) {
+                case config.RevolutCardMethodCode:
+                case config.RevolutPaymentRequestMethodCode:
+                    upsell.enrollmentConfirmationBanner.mount(widget, {
+                        orderToken: config.orderPublicId,
+                        promotionalBanner: true,
+                        customer: customer,
+                        __metadata: metadata,
+                    });
+                    break;
+                case config.RevolutPayMethodCode:
+                    break;
+                default:
+                    upsell.promotionalBanner.mount(widget, {
+                        currency: config.currency,
+                        customer: customer,
+                        __metadata: metadata,
+                    });
+                    break;
+            }
+        };
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
+    })();
+</script>
+<?php isset($hyvaCsp) && $hyvaCsp->registerInlineScript() ?>

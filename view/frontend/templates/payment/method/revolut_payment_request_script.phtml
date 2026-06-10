@@ -45,6 +45,36 @@ declare(strict_types=1);
             const showLoader = () => window.dispatchEvent(new Event('magewire:loader:start'));
             const hideLoader = () => window.dispatchEvent(new Event('magewire:loader:done'));
 
+            // Apple Pay only exists in Safari; everything else is Google Pay.
+            const detectWallet = () => {
+                return typeof window.ApplePaySession !== 'undefined' ? 'applePay' : 'googlePay';
+            };
+
+            // Keep only the detected wallet's title + logo. Idempotent.
+            const refineWalletLabel = () => {
+                const radio = document.getElementById('payment-method-revolut_payment_request');
+                const label = radio ? radio.closest('label') : null;
+                if (!label) return;
+
+                const wallet = detectWallet();
+                const walletName = wallet === 'applePay' ? 'Apple Pay' : 'Google Pay';
+                const unsupportedLogoToken = wallet === 'applePay' ? 'g-pay' : 'apple-pay';
+
+                label.querySelectorAll('img').forEach((img) => {
+                    const hide = (img.getAttribute('src') || '').indexOf(unsupportedLogoToken) !== -1;
+                    const next = hide ? 'none' : '';
+                    if (img.style.display !== next) {
+                        img.style.display = next;
+                    }
+                });
+
+                const titleEl = Array.from(label.querySelectorAll('span'))
+                    .find((span) => !span.querySelector('img') && span.textContent.trim().length > 0);
+                if (titleEl && titleEl.textContent.trim() !== walletName) {
+                    titleEl.textContent = walletName;
+                }
+            };
+
             const hidePlaceOrderButton = () => {
                 hyvaCheckout.navigation.disableButtonPlaceOrder();
                 const navMain = document.querySelector('.checkout-nav-main');
@@ -113,6 +143,7 @@ declare(strict_types=1);
                     if (result) {
                         prbInstance.render();
                         hidePlaceOrderButton();
+                        refineWalletLabel();
                     } else {
                         targetEl.style.display = 'none';
                         hyvaCheckout.payment.dispatchExceptionMessage('Apple Pay / Google Pay is not available on this device.', 'error');
@@ -131,6 +162,13 @@ declare(strict_types=1);
             };
 
             window.addEventListener('payment:method:refresh', remountPaymentRequest);
+
+            // Re-apply after each Magewire re-render, which morphs the label back.
+            refineWalletLabel();
+            window.addEventListener('payment:method:refresh', refineWalletLabel);
+            if (window.Magewire && typeof Magewire.hook === 'function') {
+                Magewire.hook('message.processed', refineWalletLabel);
+            }
 
             hyvaCheckout.payment.registerMethod({
                 code: 'revolut_payment_request',

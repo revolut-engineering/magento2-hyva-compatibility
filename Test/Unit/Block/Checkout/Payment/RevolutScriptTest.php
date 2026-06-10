@@ -58,4 +58,37 @@ class RevolutScriptTest extends TestCase
 
         $this->assertSame('[]', $this->revolutScript->getRevolutConfig());
     }
+
+    public function testIsCardholderNameFieldEnabledReturnsTrueWhenFlagTruthy()
+    {
+        $this->configProviderMock->method('getConfig')->willReturn([
+            'payment' => [
+                'revolut' => [
+                    'cardholderNameField' => true,
+                ],
+            ],
+        ]);
+
+        $this->assertTrue($this->revolutScript->isCardholderNameFieldEnabled());
+    }
+
+    public function testIsCardholderNameFieldEnabledReturnsFalseWhenFlagFalsy()
+    {
+        $this->configProviderMock->method('getConfig')->willReturn([
+            'payment' => [
+                'revolut' => [
+                    'cardholderNameField' => 0,
+                ],
+            ],
+        ]);
+
+        $this->assertFalse($this->revolutScript->isCardholderNameFieldEnabled());
+    }
+
+    public function testIsCardholderNameFieldEnabledReturnsFalseWhenKeyMissing()
+    {
+        $this->configProviderMock->method('getConfig')->willReturn([]);
+
+        $this->assertFalse($this->revolutScript->isCardholderNameFieldEnabled());
+    }
 }
