@@ -2,7 +2,12 @@
 
 namespace Revolut\PaymentHyva\Test\Unit\Block\Checkout\Payment;
 
+use Hyva\Checkout\Model\Checkout;
+use Hyva\Checkout\Model\Checkout\Step;
+use Hyva\Checkout\Model\Navigation\Navigator;
+use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\View\Element\Template\Context;
+use Magento\Quote\Model\Quote;
 use PHPUnit\Framework\TestCase;
 use Revolut\Payment\Model\Ui\ConfigProvider;
 use Revolut\PaymentHyva\Block\Checkout\Payment\RevolutScript;
@@ -24,14 +29,28 @@ class RevolutScriptTest extends TestCase
      */
     private $configProviderMock;
 
+    /**
+     * @var Navigator|\PHPUnit\Framework\MockObject\MockObject
+     */
+    private $navigatorMock;
+
+    /**
+     * @var CheckoutSession|\PHPUnit\Framework\MockObject\MockObject
+     */
+    private $checkoutSessionMock;
+
     protected function setUp(): void
     {
         $this->contextMock = $this->createMock(Context::class);
         $this->configProviderMock = $this->createMock(ConfigProvider::class);
+        $this->navigatorMock = $this->createMock(Navigator::class);
+        $this->checkoutSessionMock = $this->createMock(CheckoutSession::class);
 
         $this->revolutScript = new RevolutScript(
             $this->contextMock,
-            $this->configProviderMock
+            $this->configProviderMock,
+            $this->navigatorMock,
+            $this->checkoutSessionMock
         );
     }
 
@@ -90,5 +109,64 @@ class RevolutScriptTest extends TestCase
         $this->configProviderMock->method('getConfig')->willReturn([]);
 
         $this->assertFalse($this->revolutScript->isCardholderNameFieldEnabled());
+    }
+
+    public function testGetCascadingStepRoutesReturnsEncodedRouteList()
+    {
+        $shipping = $this->createMock(Step::class);
+        $shipping->method('getRoute')->willReturn('shipping');
+        $payment = $this->createMock(Step::class);
+        $payment->method('getRoute')->willReturn('payment');
+        $summary = $this->createMock(Step::class);
+        $summary->method('getRoute')->willReturn('summary');
+
+        $checkout = $this->createMock(Checkout::class);
+        $checkout->method('getAvailableSteps')->willReturn([$shipping, $payment, $summary]);
+        $this->navigatorMock->method('getActiveCheckout')->willReturn($checkout);
+
+        $this->assertSame('["shipping","payment","summary"]', $this->revolutScript->getCascadingStepRoutes());
+    }
+
+    public function testGetCascadingStepRoutesReturnsEmptyArrayJsonWhenNavigatorThrows()
+    {
+        $this->navigatorMock->method('getActiveCheckout')
+            ->willThrowException(new \RuntimeException('no active checkout'));
+
+        $this->assertSame('[]', $this->revolutScript->getCascadingStepRoutes());
+    }
+
+    public function testGetGrandTotalReturnsQuoteGrandTotalAsFloat()
+    {
+        $quoteMock = $this->quoteWithGrandTotal();
+        $quoteMock->method('getGrandTotal')->willReturn('42.50');
+        $this->checkoutSessionMock->method('getQuote')->willReturn($quoteMock);
+
+        $this->assertSame(42.50, $this->revolutScript->getGrandTotal());
+    }
+
+    public function testGetGrandTotalReturnsZeroWhenGetQuoteThrows()
+    {
+        $this->checkoutSessionMock->method('getQuote')
+            ->willThrowException(new \RuntimeException('no quote'));
+
+        $this->assertSame(0.0, $this->revolutScript->getGrandTotal());
+    }
+
+    public function testGetGrandTotalReturnsZeroWhenGetGrandTotalThrows()
+    {
+        $quoteMock = $this->quoteWithGrandTotal();
+        $quoteMock->method('getGrandTotal')
+            ->willThrowException(new \RuntimeException('boom'));
+        $this->checkoutSessionMock->method('getQuote')->willReturn($quoteMock);
+
+        $this->assertSame(0.0, $this->revolutScript->getGrandTotal());
+    }
+
+    private function quoteWithGrandTotal(): \PHPUnit\Framework\MockObject\MockObject
+    {
+        return $this->getMockBuilder(Quote::class)
+            ->disableOriginalConstructor()
+            ->addMethods(['getGrandTotal'])
+            ->getMock();
     }
 }

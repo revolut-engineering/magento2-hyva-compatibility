@@ -7,12 +7,44 @@ declare(strict_types=1);
     (() => {
         hyvaCheckout.api.after(() => {
             const revolutConfig = <?= $block->getRevolutConfig() ?>;
+            const cascadingStepRoutes = <?= $block->getCascadingStepRoutes() ?>;
+            const grandTotal = <?= (float) $block->getGrandTotal() ?>;
             let paymentsInstance = null;
             let revolutCheckout = null;
 
             const getWireComponent = () => {
                 return Magewire.find('checkout.payment.method.revolut_pay');
             }
+
+            // Hyvä's validate() does not enforce the billing city, which the backend place-order requires.
+            const ensureBillingComplete = async () => {
+                const wire = getWireComponent();
+                if (!wire) return false;
+
+                await wire.call('syncQuoteData');
+                const billing = wire.get('billingAddress');
+                const email = wire.get('email');
+
+                if (!email || !billing) {
+                    hyvaCheckout.payment.dispatchExceptionMessage('Please provide your billing and email address.', 'error');
+                    return false;
+                }
+                if (!billing.city) {
+                    hyvaCheckout.payment.dispatchExceptionMessage('Please provide a city for your billing address.', 'error');
+                    return false;
+                }
+                return true;
+            };
+
+            // The wallet places the order from the payment step, so any later step (e.g. the mobile
+            // "summary") is never visited. Mark every step route complete so the server cascade gate
+            // (Main::validateCascadingStepData) accepts the order.
+            const markAllStepsComplete = () => {
+                if (!Array.isArray(cascadingStepRoutes)) return;
+                cascadingStepRoutes.forEach((route) => {
+                    hyvaCheckout.storage.setValue(route, true, 'cascading-step-data');
+                });
+            };
 
             const loadSdk = () => {
                 return new Promise((resolve) => {
@@ -46,16 +78,145 @@ declare(strict_types=1);
             const hideLoader = () => window.dispatchEvent(new Event('magewire:loader:done'));
 
             const hidePlaceOrderButton = () => {
-                hyvaCheckout.navigation.disableButtonPlaceOrder();
                 const navMain = document.querySelector('.checkout-nav-main');
                 if (navMain) navMain.style.display = 'none';
             };
 
             const showPlaceOrderButton = () => {
-                hyvaCheckout.navigation.enableButtonPlaceOrder();
                 const navMain = document.querySelector('.checkout-nav-main');
                 if (navMain) navMain.style.display = '';
             };
+
+            const banners = revolutConfig.informationalBannersData || {};
+            const titleVariant = banners.revolutPayTitleVariant;
+            const titleCurrency = banners.storeCurrencyCode;
+            let titleBannerInstance = null;
+            let titleBannerEl = null;
+            let titleBannerAmount = null;
+
+            const getCurrentGrandTotal = () => {
+                const pointsBanner = document.getElementById('revolut-points-banner');
+                const liveAmount = pointsBanner ? parseFloat(pointsBanner.getAttribute('data-revolut-amount')) : NaN;
+                return Number.isFinite(liveAmount) ? liveAmount : grandTotal;
+            };
+
+            const loadBannerSdk = () => {
+                return new Promise((resolve) => {
+                    if (window.RevolutUpsell) {
+                        resolve(window.RevolutUpsell);
+                        return;
+                    }
+                    if (!revolutConfig.revolutBannerSdk) {
+                        resolve(null);
+                        return;
+                    }
+                    const existingScript = document.getElementById('revolut-banner-sdk');
+                    if (existingScript) {
+                        existingScript.addEventListener('load', () => resolve(window.RevolutUpsell));
+                        existingScript.addEventListener('error', () => resolve(null));
+                        return;
+                    }
+                    const script = document.createElement('script');
+                    script.id = 'revolut-banner-sdk';
+                    script.src = revolutConfig.revolutBannerSdk;
+                    script.onload = () => resolve(window.RevolutUpsell);
+                    script.onerror = () => resolve(null);
+                    document.head.appendChild(script);
+                });
+            };
+
+            const destroyTitleBanner = () => {
+                if (titleBannerInstance) {
+                    try {
+                        titleBannerInstance.destroy();
+                    } catch (e) {
+                        console.error('Failed to destroy Revolut Pay title banner', e);
+                    }
+                    titleBannerInstance = null;
+                }
+                titleBannerEl = null;
+                titleBannerAmount = null;
+            };
+
+            const getTitleBannerTarget = () => {
+                const radio = document.getElementById('payment-method-revolut_pay');
+                const label = radio ? radio.closest('label') : null;
+                if (!label) return null;
+
+                const existing = label.querySelector('#revolut-pay-informational-icon');
+                if (existing) return existing;
+
+                const titleEl = Array.from(label.querySelectorAll('span'))
+                    .find((span) => !span.querySelector('img') && span.textContent.trim().length > 0);
+                if (!titleEl) return null;
+
+                titleEl.classList.add('whitespace-nowrap');
+
+                const icon = document.createElement('span');
+                icon.id = 'revolut-pay-informational-icon';
+                icon.className = 'inline-flex ml-2 align-middle';
+                titleEl.appendChild(icon);
+                return icon;
+            };
+
+            const mountTitleBanner = async () => {
+                if (!titleVariant || titleVariant === 'disabled') {
+                    destroyTitleBanner();
+                    return;
+                }
+
+                const amount = getCurrentGrandTotal();
+                if (!titleCurrency || !revolutConfig.publicKey || !revolutConfig.locale || !amount) {
+                    return;
+                }
+
+                const target = getTitleBannerTarget();
+                if (!target) {
+                    destroyTitleBanner();
+                    return;
+                }
+
+                if (titleBannerEl === target && titleBannerAmount === amount && target.childElementCount > 0) {
+                    return;
+                }
+
+                destroyTitleBanner();
+
+                const RevolutUpsell = await loadBannerSdk();
+                if (!RevolutUpsell) return;
+
+                const currentTarget = getTitleBannerTarget();
+                if (!currentTarget) return;
+
+                try {
+                    titleBannerInstance = RevolutUpsell({
+                        locale: revolutConfig.locale,
+                        publicToken: revolutConfig.publicKey,
+                    });
+
+                    titleBannerInstance.promotionalBanner.mount(currentTarget, {
+                        currency: titleCurrency,
+                        amount: getMinorAmount(amount, titleCurrency),
+                        variant: titleVariant === 'cashback' ? 'link' : titleVariant,
+                        style: {
+                            text: titleVariant === 'cashback' ? 'cashback' : null,
+                            color: 'blue',
+                        },
+                        __metadata: { channel: 'magento2' },
+                    });
+
+                    titleBannerEl = currentTarget;
+                    titleBannerAmount = amount;
+                } catch (e) {
+                    console.error('Failed to mount Revolut Pay title banner', e);
+                    destroyTitleBanner();
+                }
+            };
+
+            mountTitleBanner();
+            if (window.Magewire && typeof Magewire.hook === 'function') {
+                Magewire.hook('message.processed', mountTitleBanner);
+            }
 
             const mountRevolutPay = () => {
                 if (!revolutCheckout) return;
@@ -80,7 +241,10 @@ declare(strict_types=1);
                     currency: currency,
                     totalAmount: amount,
                     validate: async () => {
-                        return await hyvaCheckout.validation.validate();
+                        if (!await hyvaCheckout.validation.validate()) {
+                            return false;
+                        }
+                        return await ensureBillingComplete();
                     },
                     createOrder: async () => {
                         const wire = getWireComponent();
@@ -120,6 +284,7 @@ declare(strict_types=1);
                     switch (event.type) {
                         case 'success':
                             showLoader();
+                            markAllStepsComplete();
                             const result = await hyvaCheckout.order.place();
 
                             if (!result) {

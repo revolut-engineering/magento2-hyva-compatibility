@@ -1,85 +1,9 @@
 <?php
 declare(strict_types=1);
 
-/** @var \Revolut\PaymentHyva\Block\Checkout\PointsBanner $block */
+/** @var \Revolut\PaymentHyva\Block\Checkout\Payment\RevolutScript $block */
+/** @var \Magento\Framework\Escaper $escaper */
 ?>
-<div id="revolut-points-banner" class="mt-4"></div>
-
-<script>
-    (() => {
-        const revolutConfig = <?= $block->getRevolutConfig() ?>;
-        const grandTotal = <?= $block->getGrandTotal() ?>;
-        const banners = (revolutConfig && revolutConfig.informationalBannersData) || {};
-
-        if (!revolutConfig
-            || !revolutConfig.isCheckoutPageActivated
-            || !banners.isRevolutInformationalBannerEnabled) {
-            return;
-        }
-
-        const currency = banners.storeCurrencyCode;
-        if (!currency || !revolutConfig.publicKey || !revolutConfig.locale) {
-            return;
-        }
-
-        const getMinorAmount = (amount) => {
-            const parts = new Intl.NumberFormat('en-GB', { style: 'currency', currency }).formatToParts(amount);
-            const fraction = parts.find(part => part.type === 'fraction');
-            return Math.round(amount * Math.pow(10, fraction ? fraction.value.length : 0));
-        };
-
-        const loadBannerSdk = () => {
-            return new Promise((resolve) => {
-                if (window.RevolutUpsell) {
-                    resolve(window.RevolutUpsell);
-                    return;
-                }
-                if (!revolutConfig.revolutBannerSdk) {
-                    resolve(null);
-                    return;
-                }
-                const existingScript = document.getElementById('revolut-banner-sdk');
-                if (existingScript) {
-                    existingScript.addEventListener('load', () => resolve(window.RevolutUpsell));
-                    existingScript.addEventListener('error', () => resolve(null));
-                    return;
-                }
-                const script = document.createElement('script');
-                script.id = 'revolut-banner-sdk';
-                script.src = revolutConfig.revolutBannerSdk;
-                script.onload = () => resolve(window.RevolutUpsell);
-                script.onerror = () => resolve(null);
-                document.head.appendChild(script);
-            });
-        };
-
-        const mount = async () => {
-            const target = document.getElementById('revolut-points-banner');
-            if (!target) return;
-
-            const RevolutUpsell = await loadBannerSdk();
-            if (!RevolutUpsell) return;
-
-            try {
-                RevolutUpsell({
-                    locale: revolutConfig.locale,
-                    publicToken: revolutConfig.publicKey,
-                }).promotionalBanner.mount(target, {
-                    currency: currency,
-                    amount: getMinorAmount(grandTotal),
-                    variant: 'banner',
-                    __metadata: { channel: 'magento2' },
-                });
-            } catch (e) {
-                console.error('Failed to mount Revolut points banner', e);
-            }
-        };
-
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', mount);
-        } else {
-            mount();
-        }
-    })();
-</script>
-<?php isset($hyvaCsp) && $hyvaCsp->registerInlineScript() ?>
+<div id="revolut-points-banner"
+     class="mt-4 mb-4"
+     data-revolut-amount="<?= $escaper->escapeHtmlAttr((string) $block->getGrandTotal()) ?>"></div>

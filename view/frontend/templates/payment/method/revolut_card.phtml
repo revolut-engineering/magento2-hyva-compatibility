@@ -5,7 +5,7 @@ declare(strict_types=1);
 /** @var \Revolut\PaymentHyva\Magewire\Checkout\Payment\Method\RevolutCard $magewire */
 /** @var \Magento\Framework\Escaper $escaper */
 ?>
-<div>
+<div id="revolut-card-wrapper" data-revolut-public-id="<?= $escaper->escapeHtmlAttr((string) ($magewire->publicId ?? '')) ?>">
     <!-- Container for revolut card UI -->
     <div id="revolut-card-component" class="mt-4 border border-gray-300 rounded-md p-3 bg-white w-full min-h-[45px]" wire:ignore></div>
     <ul id="revolut-card-errors" class="text-red-600 mt-2 text-sm list-disc list-inside pl-2" style="display: none;"></ul>
@@ -22,4 +22,17 @@ declare(strict_types=1);
 
     <!-- Container for revolut informational gateway banner -->
     <div id="revolut-upsell-banner-element" class="mt-4" wire:ignore></div>
+
+    <!--
+        Place-order trigger shown only when the payment step is not the last step (e.g. mobile, where a
+        summary step follows). The card iframe must be submitted while it is live, so the order is placed
+        from here instead of navigating away. Hidden by default; the script reveals it and hides the core
+        navigation button. On layouts where payment is the last step the core button is used instead.
+    -->
+    <button type="button"
+            id="revolut-card-place-order"
+            class="btn btn-primary justify-center w-full mt-4"
+            style="display: none;">
+        <?= $escaper->escapeHtml(__('Place Order')) ?>
+    </button>
 </div>

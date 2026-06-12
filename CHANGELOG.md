@@ -1,4 +1,9 @@
 # Changelog
+## 1.1.2
+- Added reward points banner to the checkout order summary
+- Added Revolut Pay promotional banner to the payment method label
+- Support placing the order from the payment step on multi-step (mobile) layouts
+
 ## 1.1.1
 - Added support for the cardholder name and hide-postcode card options
 - Fixed an error on the checkout card form

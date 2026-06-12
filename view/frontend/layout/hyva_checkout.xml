@@ -19,6 +19,12 @@
                    class="Revolut\PaymentHyva\Block\Checkout\Payment\RevolutScript"
                    template="Revolut_PaymentHyva::payment/method/revolut_payment_request_script.phtml"
                    ifconfig="payment/revolut_payment_request/active" />
+
+            <block name="checkout.revpoints.banner.script"
+                   as="revpoints_banner_script"
+                   class="Revolut\PaymentHyva\Block\Checkout\Payment\RevolutScript"
+                   template="Revolut_PaymentHyva::checkout/revpoints_banner_script.phtml"
+                   ifconfig="payment/revolut_pay/active" />
         </referenceContainer>
     </body>
 </page>

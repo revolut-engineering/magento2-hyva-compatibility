@@ -1,0 +1,125 @@
+<?php
+declare(strict_types=1);
+
+/** @var \Revolut\PaymentHyva\Block\Checkout\Payment\RevolutScript $block */
+?>
+<script>
+    (() => {
+        const revolutConfig = <?= $block->getRevolutConfig() ?>;
+        const banners = (revolutConfig && revolutConfig.informationalBannersData) || {};
+
+        if (!revolutConfig
+            || !revolutConfig.isCheckoutPageActivated
+            || !banners.isRevolutInformationalBannerEnabled) {
+            return;
+        }
+
+        const currency = banners.storeCurrencyCode;
+        if (!currency || !revolutConfig.publicKey || !revolutConfig.locale) {
+            return;
+        }
+
+        let upsellInstance = null;
+        let mountedEl = null;
+        let mountedAmount = null;
+
+        const getMinorAmount = (amount) => {
+            const parts = new Intl.NumberFormat('en-GB', { style: 'currency', currency }).formatToParts(amount);
+            const fraction = parts.find(part => part.type === 'fraction');
+            return Math.round(amount * Math.pow(10, fraction ? fraction.value.length : 0));
+        };
+
+        const loadBannerSdk = () => {
+            return new Promise((resolve) => {
+                if (window.RevolutUpsell) {
+                    resolve(window.RevolutUpsell);
+                    return;
+                }
+                if (!revolutConfig.revolutBannerSdk) {
+                    resolve(null);
+                    return;
+                }
+                const existingScript = document.getElementById('revolut-banner-sdk');
+                if (existingScript) {
+                    existingScript.addEventListener('load', () => resolve(window.RevolutUpsell));
+                    existingScript.addEventListener('error', () => resolve(null));
+                    return;
+                }
+                const script = document.createElement('script');
+                script.id = 'revolut-banner-sdk';
+                script.src = revolutConfig.revolutBannerSdk;
+                script.onload = () => resolve(window.RevolutUpsell);
+                script.onerror = () => resolve(null);
+                document.head.appendChild(script);
+            });
+        };
+
+        const destroyInstance = () => {
+            if (upsellInstance) {
+                try {
+                    upsellInstance.destroy();
+                } catch (e) {
+                    console.error('Failed to destroy Revolut points banner', e);
+                }
+                upsellInstance = null;
+            }
+            mountedEl = null;
+            mountedAmount = null;
+        };
+
+        const mount = async () => {
+            const target = document.getElementById('revolut-points-banner');
+            if (!target) {
+                destroyInstance();
+                return;
+            }
+
+            const amount = target.getAttribute('data-revolut-amount');
+
+            // Skip when the same target is already showing the banner for the same amount.
+            // A morph that re-adds the target produces a new (empty) node, so this naturally
+            // re-mounts after navigation while avoiding redundant remounts on noisy events.
+            if (mountedEl === target && mountedAmount === amount && target.childElementCount > 0) {
+                return;
+            }
+
+            destroyInstance();
+
+            const RevolutUpsell = await loadBannerSdk();
+            if (!RevolutUpsell) return;
+
+            // The DOM may have been morphed again while the SDK was loading.
+            const currentTarget = document.getElementById('revolut-points-banner');
+            if (!currentTarget) return;
+
+            try {
+                upsellInstance = RevolutUpsell({
+                    locale: revolutConfig.locale,
+                    publicToken: revolutConfig.publicKey,
+                });
+
+                upsellInstance.promotionalBanner.mount(currentTarget, {
+                    currency: currency,
+                    amount: getMinorAmount(parseFloat(amount)),
+                    variant: 'banner',
+                    __metadata: { channel: 'magento2' },
+                });
+
+                mountedEl = currentTarget;
+                mountedAmount = amount;
+            } catch (e) {
+                console.error('Failed to mount Revolut points banner', e);
+                destroyInstance();
+            }
+        };
+
+        mount();
+
+        // Re-mount after every Magewire re-render (step navigation, coupon, totals refresh),
+        // which replaces the inert target node.
+        if (window.Magewire && typeof Magewire.hook === 'function') {
+            Magewire.hook('message.processed', mount);
+        }
+    })();
+</script>
+<?php isset($hyvaCsp) && $hyvaCsp->registerInlineScript() ?>

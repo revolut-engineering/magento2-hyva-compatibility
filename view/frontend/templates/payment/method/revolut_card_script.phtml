@@ -7,15 +7,65 @@ declare(strict_types=1);
     (() => {
         hyvaCheckout.api.after(() => {
             const revolutConfig = <?= $block->getRevolutConfig() ?>;
+            const cascadingStepRoutes = <?= $block->getCascadingStepRoutes() ?>;
             let revolutSdk = null;
             let cardInstance = null;
             let upsellInstance = null;
             let placeOrderFallback = null;
+            let placeOrderResolve = null;
             let placeOrderReject = null;
 
             const getWireComponent = () => {
                 return Magewire.find('checkout.payment.method.revolut_card');
             };
+
+            // The order is placed from the payment step (the card iframe must stay live), so any later
+            // step (e.g. the mobile "summary") is never visited. Mark every step route complete so the
+            // server cascade gate (Main::validateCascadingStepData) accepts the order.
+            const markAllStepsComplete = () => {
+                if (!Array.isArray(cascadingStepRoutes)) return;
+                cascadingStepRoutes.forEach((route) => {
+                    hyvaCheckout.storage.setValue(route, true, 'cascading-step-data');
+                });
+            };
+
+            // On multi-step layouts where payment is not the last step, the core footer button navigates
+            // forward instead of placing the order. Swap it for a place-order button next to the card so
+            // the iframe can be submitted while live. Re-applied after every morph.
+            const applyPaymentStepLayout = () => {
+                const placeOrderButton = document.getElementById('revolut-card-place-order');
+                const navMain = document.querySelector('.checkout-nav-main');
+                const placeFromHere = !!cardInstance && hyvaCheckout.navigation.hasNext();
+
+                // Only take over the nav while the card is the active method driving placement; otherwise
+                // leave it untouched so other methods (wallets) keep control of the footer button.
+                if (!placeFromHere) {
+                    if (placeOrderButton) placeOrderButton.style.display = 'none';
+                    return;
+                }
+
+                if (placeOrderButton) placeOrderButton.style.display = '';
+                if (navMain) navMain.style.display = 'none';
+            };
+
+            const restoreNavigation = () => {
+                const placeOrderButton = document.getElementById('revolut-card-place-order');
+                const navMain = document.querySelector('.checkout-nav-main');
+                if (placeOrderButton) placeOrderButton.style.display = 'none';
+                if (navMain) navMain.style.display = '';
+            };
+
+            // Delegated so it survives Magewire morphs replacing the button node.
+            document.addEventListener('click', (event) => {
+                if (event.target.closest('#revolut-card-place-order')) {
+                    event.preventDefault();
+                    hyvaCheckout.order.place();
+                }
+            });
+
+            if (window.Magewire && typeof Magewire.hook === 'function') {
+                Magewire.hook('message.processed', applyPaymentStepLayout);
+            }
 
             const loadSdk = () => {
                 return new Promise((resolve) => {
@@ -104,10 +154,12 @@ declare(strict_types=1);
 
                 method: {
                     initialize: async function () {
-                        const wireComponent = getWireComponent();
-                        if (!wireComponent) return;
-
-                        const publicId = await wireComponent.get('publicId');
+                        // Read publicId from the server-rendered DOM rather than the Magewire proxy:
+                        // when the card is pre-selected, initialize() fires on the methods-list
+                        // component.initialized hook before this method's own component is hydrated, so
+                        // its $wire is not yet available.
+                        const wrapper = document.getElementById('revolut-card-wrapper');
+                        const publicId = wrapper ? wrapper.getAttribute('data-revolut-public-id') : null;
                         if (!publicId) return;
 
                         const RevolutCheckout = await loadSdk();
@@ -132,11 +184,18 @@ declare(strict_types=1);
                                         await placeOrderFallback();
                                         placeOrderFallback = null;
                                     }
+                                    if (placeOrderResolve) {
+                                        placeOrderResolve(true);
+                                        placeOrderResolve = null;
+                                    }
+                                    placeOrderReject = null;
                                 },
                                 onError: (messages) => {
                                     hyvaCheckout.payment.dispatchExceptionMessage(messages.message || 'Payment error', 'error');
                                     hideLoader();
 
+                                    placeOrderFallback = null;
+                                    placeOrderResolve = null;
                                     if (placeOrderReject) {
                                         placeOrderReject(messages.message);
                                         placeOrderReject = null;
@@ -164,6 +223,8 @@ declare(strict_types=1);
                                     });
                                     errorDiv.style.display = 'block';
 
+                                    placeOrderFallback = null;
+                                    placeOrderResolve = null;
                                     if (placeOrderReject) {
                                         hideLoader();
                                         placeOrderReject();
@@ -174,6 +235,12 @@ declare(strict_types=1);
                         }
 
                         await mountGatewayBanner(publicId);
+
+                        applyPaymentStepLayout();
+                    },
+
+                    validate: function() {
+                        return true;
                     },
 
                     uninitialize: async function () {
@@ -182,6 +249,7 @@ declare(strict_types=1);
                             cardInstance = null;
                         }
                         destroyUpsellInstance();
+                        restoreNavigation();
                     },
 
                     handleException: async function({ exception, fallback }) {
@@ -197,6 +265,9 @@ declare(strict_types=1);
                         const wire = getWireComponent();
                         showLoader();
 
+                        // Placing from the payment step: satisfy the server cascade for any later step.
+                        markAllStepsComplete();
+
                         try {
                             // Sync order totals
                             await wire.call('initializeRevolutOrder');
@@ -207,9 +278,14 @@ declare(strict_types=1);
                             const billing = wire.get('billingAddress');
                             const email = wire.get('email');
 
-                            if (!email || !billing || !billing.city) {
+                            if (!email || !billing) {
                                 hyvaCheckout.payment.dispatchExceptionMessage('Please provide your billing and email address.', 'error');
                                 throw new Error('Missing billing or email address');
+                            }
+
+                            if (!billing.city) {
+                                hyvaCheckout.payment.dispatchExceptionMessage('Please provide a city for your billing address.', 'error');
+                                throw new Error('Missing billing city');
                             }
 
                             let name;
@@ -223,6 +299,7 @@ declare(strict_types=1);
                             placeOrderFallback = fallback;
 
                             return await new Promise((resolve, reject) => {
+                                placeOrderResolve = resolve;
                                 placeOrderReject = reject;
                                 cardInstance.submit({
                                     email: email,
@@ -241,6 +318,7 @@ declare(strict_types=1);
                         } catch (e) {
                             hideLoader();
                             placeOrderReject = null;
+                            placeOrderResolve = null;
                             placeOrderFallback = null;
                             throw e;
                         }
