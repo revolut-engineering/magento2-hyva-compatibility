@@ -1,4 +1,7 @@
 # Changelog
+## 1.1.3
+- Documentation: added installation steps to the README
+
 ## 1.1.2
 - Added reward points banner to the checkout order summary
 - Added Revolut Pay promotional banner to the payment method label
