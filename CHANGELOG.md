@@ -1,4 +1,7 @@
 # Changelog
+## 1.1.4
+- Recover the checkout after a failed order placement so the shopper can retry
+
 ## 1.1.3
 - Documentation: added installation steps to the README
 

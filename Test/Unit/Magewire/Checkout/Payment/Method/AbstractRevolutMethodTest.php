@@ -218,6 +218,27 @@ class AbstractRevolutMethodTest extends TestCase
         $this->assertNull($this->method->publicId);
     }
 
+    public function testCancelRevolutOrderCancelsCurrentOrderAndClearsPublicId()
+    {
+        $this->method->publicId = 'pub_test_123';
+        $this->orderManagementMock->expects($this->once())
+            ->method('cancel')
+            ->with('pub_test_123', 'Magento order placement failed');
+
+        $this->method->cancelRevolutOrder('Magento order placement failed');
+
+        $this->assertNull($this->method->publicId);
+    }
+
+    public function testCancelRevolutOrderDoesNothingWithoutPublicId()
+    {
+        $this->orderManagementMock->expects($this->never())->method('cancel');
+
+        $this->method->cancelRevolutOrder('Magento order placement failed');
+
+        $this->assertNull($this->method->publicId);
+    }
+
     public function testMountDelegatesToInitializeRevolutOrder()
     {
         $method = $this->getMockBuilder(RevolutCard::class)

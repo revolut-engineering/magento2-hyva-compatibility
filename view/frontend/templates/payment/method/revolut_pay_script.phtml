@@ -11,6 +11,7 @@ declare(strict_types=1);
             const grandTotal = <?= (float) $block->getGrandTotal() ?>;
             let paymentsInstance = null;
             let revolutCheckout = null;
+            let registeredMethod = null;
 
             const getWireComponent = () => {
                 return Magewire.find('checkout.payment.method.revolut_pay');
@@ -285,11 +286,40 @@ declare(strict_types=1);
                         case 'success':
                             showLoader();
                             markAllStepsComplete();
-                            const result = await hyvaCheckout.order.place();
+                            let result = false;
+                            let placementError = null;
+                            const handlePlacementError = event => {
+                                placementError = new Error(event.detail.text);
+                            };
 
-                            if (!result) {
+                            window.addEventListener(
+                                'order:place:revolut_pay:error',
+                                handlePlacementError,
+                                { once: true }
+                            );
+
+                            try {
+                                result = await hyvaCheckout.order.place();
+                            } catch (error) {
+                                placementError = error;
+                            } finally {
+                                window.removeEventListener(
+                                    'order:place:revolut_pay:error',
+                                    handlePlacementError
+                                );
+                            }
+
+                            if (placementError || !result) {
+                                try {
+                                    await recoverFromOrderPlacementFailure(placementError);
+                                } catch (recoveryError) {
+                                    showPlaceOrderButton();
+                                    hyvaCheckout.payment.dispatchExceptionMessage(
+                                        'Unable to reset the payment. Please refresh the page and try again.',
+                                        'error'
+                                    );
+                                }
                                 hideLoader();
-                                showPlaceOrderButton();
                             }
                             break;
                         case 'error':
@@ -309,9 +339,22 @@ declare(strict_types=1);
                 mountRevolutPay();
             };
 
-            window.addEventListener('payment:method:refresh', remountRevolutPay);
+            const recoverFromOrderPlacementFailure = async error => {
+                const wire = getWireComponent();
+                if (!wire) {
+                    throw new Error('Revolut Pay Magewire component is unavailable.');
+                }
 
-            hyvaCheckout.payment.registerMethod({
+                const message = error && error.message
+                    ? error.message
+                    : 'Something went wrong while processing your order.';
+
+                await wire.call('cancelRevolutOrder', message);
+                await registeredMethod.uninitialize();
+                await registeredMethod.initialize();
+            };
+
+            registeredMethod = hyvaCheckout.payment.registerMethod({
                 code: 'revolut_pay',
 
                 method: {
@@ -337,6 +380,8 @@ declare(strict_types=1);
                     },
                 }
             });
+
+            window.addEventListener('payment:method:refresh', remountRevolutPay);
         });
     })();
 </script>

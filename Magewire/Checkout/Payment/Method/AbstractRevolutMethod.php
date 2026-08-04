@@ -128,6 +128,16 @@ abstract class AbstractRevolutMethod extends Component\Form implements Evaluatio
         }
     }
 
+    public function cancelRevolutOrder(string $reason): void
+    {
+        if (!$this->publicId) {
+            return;
+        }
+
+        $this->orderManagement->cancel($this->publicId, $reason);
+        $this->publicId = null;
+    }
+
     public function evaluateCompletion(EvaluationResultFactory $resultFactory): EvaluationResultInterface
     {
         // Once the frontend validate() resolves to true, Magewire Evaluation naturally succeeds.

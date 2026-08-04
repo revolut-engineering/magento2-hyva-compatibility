@@ -14,6 +14,7 @@ declare(strict_types=1);
             let placeOrderFallback = null;
             let placeOrderResolve = null;
             let placeOrderReject = null;
+            let registeredMethod = null;
 
             const getWireComponent = () => {
                 return Magewire.find('checkout.payment.method.revolut_card');
@@ -149,7 +150,24 @@ declare(strict_types=1);
             const showLoader = () => window.dispatchEvent(new Event('magewire:loader:start'));
             const hideLoader = () => window.dispatchEvent(new Event('magewire:loader:done'));
 
-            hyvaCheckout.payment.registerMethod({
+            const recoverFromOrderPlacementFailure = async error => {
+                const wire = getWireComponent();
+                if (!wire) {
+                    throw new Error('Revolut Card Magewire component is unavailable.');
+                }
+
+                const message = error && error.message
+                    ? error.message
+                    : 'Something went wrong while processing your order.';
+
+                await wire.call('cancelRevolutOrder', message);
+                await wire.call('initializeRevolutOrder');
+                await registeredMethod.uninitialize();
+                revolutSdk = null;
+                await registeredMethod.initialize();
+            };
+
+            registeredMethod = hyvaCheckout.payment.registerMethod({
                 code: 'revolut_card',
 
                 method: {
@@ -181,7 +199,47 @@ declare(strict_types=1);
                                 showLoadingIndicator: true,
                                 onSuccess: async () => {
                                     if (placeOrderFallback) {
-                                        await placeOrderFallback();
+                                        let result = false;
+                                        let placementError = null;
+                                        const handlePlacementError = event => {
+                                            placementError = new Error(event.detail.text);
+                                        };
+
+                                        window.addEventListener(
+                                            'order:place:revolut_card:error',
+                                            handlePlacementError,
+                                            { once: true }
+                                        );
+
+                                        try {
+                                            result = await placeOrderFallback();
+                                        } catch (error) {
+                                            placementError = error;
+                                        } finally {
+                                            window.removeEventListener(
+                                                'order:place:revolut_card:error',
+                                                handlePlacementError
+                                            );
+                                        }
+
+                                        if (placementError || !result) {
+                                            try {
+                                                await recoverFromOrderPlacementFailure(placementError);
+                                            } catch (recoveryError) {
+                                                hyvaCheckout.payment.dispatchExceptionMessage(
+                                                    'Unable to reset the payment. Please refresh the page and try again.',
+                                                    'error'
+                                                );
+                                            }
+
+                                            hideLoader();
+                                            placeOrderResolve = null;
+                                            if (placeOrderReject) {
+                                                placeOrderReject(placementError || new Error('Magento order placement failed.'));
+                                                placeOrderReject = null;
+                                            }
+                                        }
+
                                         placeOrderFallback = null;
                                     }
                                     if (placeOrderResolve) {
@@ -324,6 +382,14 @@ declare(strict_types=1);
                         }
                     },
                 }
+            });
+
+            window.addEventListener('payment:method:refresh', async () => {
+                if (!cardInstance) return;
+
+                await registeredMethod.uninitialize();
+                revolutSdk = null;
+                await registeredMethod.initialize();
             });
         });
     })();

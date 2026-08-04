@@ -10,6 +10,7 @@ declare(strict_types=1);
             const cascadingStepRoutes = <?= $block->getCascadingStepRoutes() ?>;
             let prbInstance = null;
             let revolutCheckout = null;
+            let registeredMethod = null;
 
             const getWireComponent = () => {
                 return Magewire.find('checkout.payment.method.revolut_payment_request');
@@ -118,7 +119,7 @@ declare(strict_types=1);
                 if (navMain) navMain.style.display = '';
             };
 
-            const mountPaymentRequest = () => {
+            const mountPaymentRequest = async () => {
                 if (!revolutCheckout) return;
 
                 const targetEl = document.getElementById('revolut-prb-component');
@@ -144,7 +145,7 @@ declare(strict_types=1);
                         if (!isValid) {
                             prbInstance.destroy();
                             prbInstance = null;
-                            mountPaymentRequest();
+                            await mountPaymentRequest();
                         }
                     },
                     createOrder: async () => {
@@ -158,10 +159,40 @@ declare(strict_types=1);
                     onSuccess: async () => {
                         showLoader();
                         markAllStepsComplete();
-                        const result = await hyvaCheckout.order.place();
-                        if (!result) {
+                        let result = false;
+                        let placementError = null;
+                        const handlePlacementError = event => {
+                            placementError = new Error(event.detail.text);
+                        };
+
+                        window.addEventListener(
+                            'order:place:revolut_payment_request:error',
+                            handlePlacementError,
+                            { once: true }
+                        );
+
+                        try {
+                            result = await hyvaCheckout.order.place();
+                        } catch (error) {
+                            placementError = error;
+                        } finally {
+                            window.removeEventListener(
+                                'order:place:revolut_payment_request:error',
+                                handlePlacementError
+                            );
+                        }
+
+                        if (placementError || !result) {
+                            try {
+                                await recoverFromOrderPlacementFailure(placementError);
+                            } catch (recoveryError) {
+                                showPlaceOrderButton();
+                                hyvaCheckout.payment.dispatchExceptionMessage(
+                                    'Unable to reset the payment. Please refresh the page and try again.',
+                                    'error'
+                                );
+                            }
                             hideLoader();
-                            showPlaceOrderButton();
                         }
                     },
                     onError: (error) => {
@@ -171,38 +202,36 @@ declare(strict_types=1);
                     }
                 });
 
-                prbInstance.canMakePayment().then((result) => {
-                    if (result) {
-                        prbInstance.render();
-                        hidePlaceOrderButton();
-                        refineWalletLabel();
-                    } else {
-                        targetEl.style.display = 'none';
-                        hyvaCheckout.payment.dispatchExceptionMessage('Apple Pay / Google Pay is not available on this device.', 'error');
-                        prbInstance.destroy();
-                        prbInstance = null;
-                    }
-                });
-            };
+                const canMakePayment = await prbInstance.canMakePayment();
+                if (canMakePayment) {
+                    prbInstance.render();
+                    hidePlaceOrderButton();
+                    refineWalletLabel();
+                    return;
+                }
 
-            const remountPaymentRequest = () => {
-                if (!prbInstance) return;
-
+                targetEl.style.display = 'none';
+                hyvaCheckout.payment.dispatchExceptionMessage('Apple Pay / Google Pay is not available on this device.', 'error');
                 prbInstance.destroy();
                 prbInstance = null;
-                mountPaymentRequest();
             };
 
-            window.addEventListener('payment:method:refresh', remountPaymentRequest);
+            const recoverFromOrderPlacementFailure = async error => {
+                const wire = getWireComponent();
+                if (!wire) {
+                    throw new Error('Payment Request Magewire component is unavailable.');
+                }
 
-            // Re-apply after each Magewire re-render, which morphs the label back.
-            refineWalletLabel();
-            window.addEventListener('payment:method:refresh', refineWalletLabel);
-            if (window.Magewire && typeof Magewire.hook === 'function') {
-                Magewire.hook('message.processed', refineWalletLabel);
-            }
+                const message = error && error.message
+                    ? error.message
+                    : 'Something went wrong while processing your order.';
 
-            hyvaCheckout.payment.registerMethod({
+                await wire.call('cancelRevolutOrder', message);
+                await registeredMethod.uninitialize();
+                await registeredMethod.initialize();
+            };
+
+            registeredMethod = hyvaCheckout.payment.registerMethod({
                 code: 'revolut_payment_request',
 
                 method: {
@@ -211,7 +240,7 @@ declare(strict_types=1);
                         if (!RevolutCheckout) return;
 
                         revolutCheckout = RevolutCheckout;
-                        mountPaymentRequest();
+                        await mountPaymentRequest();
                     },
 
                     uninitialize: async function () {
@@ -227,6 +256,19 @@ declare(strict_types=1);
                         return true;
                     },
                 }
+            });
+
+            refineWalletLabel();
+            if (window.Magewire && typeof Magewire.hook === 'function') {
+                Magewire.hook('message.processed', refineWalletLabel);
+            }
+
+            window.addEventListener('payment:method:refresh', async () => {
+                if (!prbInstance) return;
+
+                await registeredMethod.uninitialize();
+                await registeredMethod.initialize();
+                refineWalletLabel();
             });
         });
     })();
