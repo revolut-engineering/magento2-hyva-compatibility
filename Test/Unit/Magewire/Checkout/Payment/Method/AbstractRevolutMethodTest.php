@@ -17,6 +17,7 @@ use Revolut\Payment\Api\OrderManagementInterface;
 use Revolut\Payment\Model\Ui\ConfigProvider;
 use Revolut\Payment\Observer\DataAssignObserver;
 use Revolut\PaymentHyva\Magewire\Checkout\Payment\Method\RevolutCard;
+use Revolut\PaymentHyva\Magewire\Checkout\Payment\Method\RevolutPay;
 
 class AbstractRevolutMethodTest extends TestCase
 {
@@ -264,7 +265,7 @@ class AbstractRevolutMethodTest extends TestCase
         $method->expects($this->once())->method('initializeRevolutOrder');
         $method->expects($this->once())
             ->method('dispatchBrowserEvent')
-            ->with('payment:method:refresh');
+            ->with('payment:method:refresh', ['method' => ConfigProvider::CODE]);
 
         $method->refresh();
     }
@@ -276,7 +277,7 @@ class AbstractRevolutMethodTest extends TestCase
         $method->expects($this->once())->method('initializeRevolutOrder');
         $method->expects($this->once())
             ->method('dispatchBrowserEvent')
-            ->with('payment:method:refresh');
+            ->with('payment:method:refresh', ['method' => ConfigProvider::CODE]);
 
         $method->refresh();
     }
@@ -287,6 +288,34 @@ class AbstractRevolutMethodTest extends TestCase
 
         $method->expects($this->never())->method('initializeRevolutOrder');
         $method->expects($this->never())->method('dispatchBrowserEvent');
+
+        $method->refresh();
+    }
+
+    public function testDeferredMethodRefreshesWidgetWithoutInitializingOrder()
+    {
+        $paymentMock = $this->createMock(Payment::class);
+        $paymentMock->method('getMethod')->willReturn(ConfigProvider::REVOLUT_PAY_CODE);
+
+        $quoteMock = $this->createMock(Quote::class);
+        $quoteMock->method('getPayment')->willReturn($paymentMock);
+        $this->sessionCheckoutMock->method('getQuote')->willReturn($quoteMock);
+
+        $method = $this->getMockBuilder(RevolutPay::class)
+            ->setConstructorArgs([
+                $this->validatorMock,
+                $this->sessionCheckoutMock,
+                $this->orderManagementMock,
+                $this->quoteRepositoryMock,
+                $this->loggerMock,
+            ])
+            ->onlyMethods(['initializeRevolutOrder', 'dispatchBrowserEvent'])
+            ->getMock();
+
+        $method->expects($this->never())->method('initializeRevolutOrder');
+        $method->expects($this->once())
+            ->method('dispatchBrowserEvent')
+            ->with('payment:method:refresh', ['method' => ConfigProvider::REVOLUT_PAY_CODE]);
 
         $method->refresh();
     }

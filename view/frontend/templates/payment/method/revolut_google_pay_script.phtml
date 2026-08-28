@@ -1,0 +1,18 @@
+<?php
+declare(strict_types=1);
+
+/** @var \Revolut\PaymentHyva\Block\Checkout\Payment\RevolutScript $block */
+$walletConfig = [
+    'methodCode' => 'revolut_google_pay',
+    'preferredPaymentMethod' => 'googlePay',
+    'targetId' => 'revolut-google-pay-component',
+    'magewireComponentName' => 'checkout.payment.method.revolut_google_pay',
+    'buttonStyleConfigKey' => 'googlePayButtonStyle',
+    'errorEventName' => 'order:place:revolut_google_pay:error',
+    'methodDisplayName' => 'Google Pay',
+];
+?>
+<script>
+<?php require $block->getTemplateFile('Revolut_PaymentHyva::payment/method/revolut_payment_request_script.phtml'); ?>
+</script>
+<?php isset($hyvaCsp) && $hyvaCsp->registerInlineScript() ?>

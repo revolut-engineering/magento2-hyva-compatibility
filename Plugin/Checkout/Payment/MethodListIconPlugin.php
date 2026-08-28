@@ -30,7 +30,8 @@ class MethodListIconPlugin
     private const REVOLUT_METHOD_CODES = [
         ConfigProvider::CODE,
         ConfigProvider::REVOLUT_PAY_CODE,
-        ConfigProvider::REVOLUT_PAYMENT_REQUEST_CODE,
+        ConfigProvider::REVOLUT_GOOGLE_PAY_CODE,
+        ConfigProvider::REVOLUT_APPLE_PAY_CODE,
     ];
 
     private RevolutMethodMetaDataFactory $metaDataFactory;
@@ -108,10 +109,8 @@ class MethodListIconPlugin
         $this->iconMap = [
             ConfigProvider::CODE => $cardIcons,
             ConfigProvider::REVOLUT_PAY_CODE => array_merge([$this->icon(self::ICON_REVOLUT)], $cardIcons),
-            ConfigProvider::REVOLUT_PAYMENT_REQUEST_CODE => [
-                $this->icon(self::ICON_APPLE_PAY),
-                $this->icon(self::ICON_GOOGLE_PAY),
-            ],
+            ConfigProvider::REVOLUT_GOOGLE_PAY_CODE => [$this->icon(self::ICON_GOOGLE_PAY)],
+            ConfigProvider::REVOLUT_APPLE_PAY_CODE => [$this->icon(self::ICON_APPLE_PAY)],
         ];
 
         return $this->iconMap;

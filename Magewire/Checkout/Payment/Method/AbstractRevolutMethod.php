@@ -59,22 +59,16 @@ abstract class AbstractRevolutMethod extends Component\Form implements Evaluatio
 
     abstract protected function getMethodCode(): string;
 
-    public function mount(): void
-    {
-        $this->initializeRevolutOrder();
-    }
-
     public function refresh(): void
     {
         if (!$this->isSelectedMethod()) {
             return;
         }
 
-        $this->initializeRevolutOrder();
-        $this->dispatchBrowserEvent('payment:method:refresh');
+        $this->dispatchBrowserEvent('payment:method:refresh', ['method' => $this->getMethodCode()]);
     }
 
-    private function isSelectedMethod(): bool
+    protected function isSelectedMethod(): bool
     {
         $selectedMethod = $this->getQuote()->getPayment()->getMethod();
 

@@ -1,20 +1,36 @@
 <?php
 declare(strict_types=1);
-
-/** @var \Magento\Framework\View\Element\Template $block */
+/** @var \Revolut\PaymentHyva\Block\Checkout\Payment\RevolutScript $block */
+/** @var array<string,string> $walletConfig */
+$methodCode = $walletConfig['methodCode'];
+$preferredPaymentMethod = $walletConfig['preferredPaymentMethod'];
+$targetId = $walletConfig['targetId'];
+$magewireComponentName = $walletConfig['magewireComponentName'];
+$buttonStyleConfigKey = $walletConfig['buttonStyleConfigKey'];
+$errorEventName = $walletConfig['errorEventName'];
+$methodDisplayName = $walletConfig['methodDisplayName'];
 ?>
-<script>
     (() => {
         hyvaCheckout.api.after(() => {
             const revolutConfig = <?= $block->getRevolutConfig() ?>;
             const cascadingStepRoutes = <?= $block->getCascadingStepRoutes() ?>;
-            let prbInstance = null;
-            let revolutCheckout = null;
-            let registeredMethod = null;
+            const quoteCurrency = <?= /* @noEscape */ json_encode($block->getQuoteCurrencyCode()) ?>;
+            const quoteAmount = <?= (float) $block->getGrandTotal() ?>;
+            const methodCode = '<?= /* @noEscape */ $methodCode ?>';
+            const preferredPaymentMethod = '<?= /* @noEscape */ $preferredPaymentMethod ?>';
+            const targetId = '<?= /* @noEscape */ $targetId ?>';
+            const magewireComponentName = '<?= /* @noEscape */ $magewireComponentName ?>';
+            const buttonStyleConfigKey = '<?= /* @noEscape */ $buttonStyleConfigKey ?>';
+            const errorEventName = '<?= /* @noEscape */ $errorEventName ?>';
+            const methodDisplayName = '<?= /* @noEscape */ $methodDisplayName ?>';
+            let paymentRequestInstance = null;
+            let paymentRequestTarget = null;
+            let capabilityPromise = null;
+            let isAvailable = null;
 
             const getWireComponent = () => {
-                return Magewire.find('checkout.payment.method.revolut_payment_request');
-            }
+                return Magewire.find(magewireComponentName);
+            };
 
             // Hyvä's validate() does not enforce the billing city, which the backend place-order requires.
             const ensureBillingComplete = async () => {
@@ -47,20 +63,28 @@ declare(strict_types=1);
             };
 
             const loadSdk = () => {
-                return new Promise((resolve) => {
-                    if (window.RevolutCheckout) {
-                        resolve(window.RevolutCheckout);
-                        return;
-                    }
+                if (window.RevolutCheckout) {
+                    return Promise.resolve(window.RevolutCheckout);
+                }
+                if (window.revolutCheckoutSdkPromise) {
+                    return window.revolutCheckoutSdkPromise;
+                }
+
+                window.revolutCheckoutSdkPromise = new Promise((resolve) => {
                     if (!revolutConfig || !revolutConfig.revolutSdk) {
                         resolve(null);
                         return;
                     }
+
                     const script = document.createElement('script');
+                    script.id = 'revolut-checkout-sdk';
                     script.src = revolutConfig.revolutSdk;
-                    script.onload = () => resolve(window.RevolutCheckout);
+                    script.onload = () => resolve(window.RevolutCheckout || null);
+                    script.onerror = () => resolve(null);
                     document.head.appendChild(script);
                 });
+
+                return window.revolutCheckoutSdkPromise;
             };
 
             const getMinorAmount = (amount, currency) => {
@@ -77,36 +101,6 @@ declare(strict_types=1);
             const showLoader = () => window.dispatchEvent(new Event('magewire:loader:start'));
             const hideLoader = () => window.dispatchEvent(new Event('magewire:loader:done'));
 
-            // Apple Pay only exists in Safari; everything else is Google Pay.
-            const detectWallet = () => {
-                return typeof window.ApplePaySession !== 'undefined' ? 'applePay' : 'googlePay';
-            };
-
-            // Keep only the detected wallet's title + logo. Idempotent.
-            const refineWalletLabel = () => {
-                const radio = document.getElementById('payment-method-revolut_payment_request');
-                const label = radio ? radio.closest('label') : null;
-                if (!label) return;
-
-                const wallet = detectWallet();
-                const walletName = wallet === 'applePay' ? 'Apple Pay' : 'Google Pay';
-                const unsupportedLogoToken = wallet === 'applePay' ? 'g-pay' : 'apple-pay';
-
-                label.querySelectorAll('img').forEach((img) => {
-                    const hide = (img.getAttribute('src') || '').indexOf(unsupportedLogoToken) !== -1;
-                    const next = hide ? 'none' : '';
-                    if (img.style.display !== next) {
-                        img.style.display = next;
-                    }
-                });
-
-                const titleEl = Array.from(label.querySelectorAll('span'))
-                    .find((span) => !span.querySelector('img') && span.textContent.trim().length > 0);
-                if (titleEl && titleEl.textContent.trim() !== walletName) {
-                    titleEl.textContent = walletName;
-                }
-            };
-
             const hidePlaceOrderButton = () => {
                 hyvaCheckout.navigation.disableButtonPlaceOrder();
                 const navMain = document.querySelector('.checkout-nav-main');
@@ -119,42 +113,183 @@ declare(strict_types=1);
                 if (navMain) navMain.style.display = '';
             };
 
-            const mountPaymentRequest = async () => {
-                if (!revolutCheckout) return;
+            const validateCheckout = async () => {
+                return await hyvaCheckout.validation.validate() && await ensureBillingComplete();
+            };
 
-                const targetEl = document.getElementById('revolut-prb-component');
-                if (!targetEl || prbInstance) return;
+            const selectFallbackMethod = () => {
+                const selected = document.getElementById(`payment-method-${methodCode}`);
+                if (!selected || !selected.checked || !window.Magewire) return;
 
-                const { paymentRequest } = revolutCheckout.payments({
+                const fallback = Array.from(document.querySelectorAll(
+                    '#payment-method-list input[name="payment-method-option"]'
+                )).find((radio) => {
+                    const option = radio.closest('[id^="payment-method-option-"]');
+                    return radio.value !== methodCode && option && !option.hidden;
+                });
+
+                if (fallback) {
+                    Magewire.find('checkout.payment.methods').set('method', fallback.value);
+                }
+            };
+
+            const applyAvailability = () => {
+                const option = document.getElementById(`payment-method-option-${methodCode}`);
+                if (!option) return;
+
+                option.hidden = isAvailable !== true;
+                if (isAvailable === false) {
+                    selectFallbackMethod();
+                }
+            };
+
+            const checkCapability = () => {
+                if (capabilityPromise) return capabilityPromise;
+
+                capabilityPromise = (async () => {
+                    applyAvailability();
+
+                    if (!quoteCurrency || !quoteAmount) {
+                        isAvailable = false;
+                        applyAvailability();
+                        return false;
+                    }
+
+                    const request = await createPaymentRequest();
+                    if (!request) {
+                        isAvailable = false;
+                        applyAvailability();
+                        return false;
+                    }
+
+                    try {
+                        isAvailable = await request.canMakePayment() === preferredPaymentMethod;
+                    } catch (error) {
+                        isAvailable = false;
+                    }
+
+                    if (!isAvailable && paymentRequestInstance === request) {
+                        request.destroy();
+                        paymentRequestTarget.remove();
+                        paymentRequestInstance = null;
+                        paymentRequestTarget = null;
+                    }
+
+                    applyAvailability();
+                    return isAvailable;
+                })();
+
+                return capabilityPromise;
+            };
+
+            const recoverFromOrderPlacementFailure = async (error) => {
+                const wire = getWireComponent();
+                if (!wire) {
+                    throw new Error(methodDisplayName + ' Magewire component is unavailable.');
+                }
+
+                const message = error && error.message
+                    ? error.message
+                    : 'Something went wrong while processing your order.';
+
+                await wire.call('cancelRevolutOrder', message);
+                showPlaceOrderButton();
+                resetPaymentRequest();
+                await renderPaymentRequest();
+            };
+
+            const getPaymentRequestData = () => {
+                const target = document.getElementById(targetId);
+                if (!target) return null;
+
+                const container = target.parentElement;
+                const currency = container.getAttribute('data-revolut-currency');
+                const amount = getMinorAmount(parseFloat(container.getAttribute('data-revolut-amount')), currency);
+
+                return { target, currency, amount };
+            };
+
+            const resetPaymentRequest = () => {
+                if (paymentRequestInstance) paymentRequestInstance.destroy();
+                if (paymentRequestTarget) paymentRequestTarget.remove();
+
+                paymentRequestInstance = null;
+                paymentRequestTarget = null;
+                capabilityPromise = null;
+                isAvailable = null;
+            };
+
+            const attachPaymentRequestTarget = () => {
+                const paymentRequestData = getPaymentRequestData();
+                if (!paymentRequestTarget || !paymentRequestData) return false;
+
+                paymentRequestTarget.removeAttribute('style');
+                paymentRequestData.target.appendChild(paymentRequestTarget);
+                return true;
+            };
+
+            const hidePaymentRequestTarget = () => {
+                if (!paymentRequestTarget) return;
+
+                paymentRequestTarget.style.position = 'absolute';
+                paymentRequestTarget.style.left = '-9999px';
+                paymentRequestTarget.style.width = '1px';
+                paymentRequestTarget.style.height = '1px';
+                paymentRequestTarget.style.overflow = 'hidden';
+                paymentRequestTarget.style.pointerEvents = 'none';
+                document.body.appendChild(paymentRequestTarget);
+            };
+
+            const createPaymentRequest = async () => {
+                if (paymentRequestInstance) return paymentRequestInstance;
+
+                const RevolutCheckout = await loadSdk();
+                if (!RevolutCheckout) return null;
+                if (paymentRequestInstance) return paymentRequestInstance;
+
+                const paymentRequestData = getPaymentRequestData();
+                const currency = paymentRequestData ? paymentRequestData.currency : quoteCurrency;
+                const amount = paymentRequestData
+                    ? paymentRequestData.amount
+                    : getMinorAmount(quoteAmount, quoteCurrency);
+
+                paymentRequestTarget = document.createElement('div');
+                hidePaymentRequestTarget();
+
+                const { paymentRequest } = RevolutCheckout.payments({
                     locale: revolutConfig.locale,
                     publicToken: revolutConfig.publicKey,
                 });
 
-                const container = targetEl.parentElement;
-                const currency = container.getAttribute('data-revolut-currency');
-                const amount = getMinorAmount(parseFloat(container.getAttribute('data-revolut-amount')), currency);
-                const buttonStyle = revolutConfig.prButtonStyle || {};
+                const buttonStyle = revolutConfig[buttonStyleConfigKey] || {};
 
-                prbInstance = paymentRequest.mount(targetEl, {
+                const request = paymentRequest.mount(paymentRequestTarget, {
                     currency: currency,
                     amount: amount,
                     requestShipping: false,
+                    preferredPaymentMethod: preferredPaymentMethod,
                     buttonStyle: buttonStyle,
                     onClick: async () => {
-                        const isValid = await hyvaCheckout.validation.validate() && await ensureBillingComplete();
-                        if (!isValid) {
-                            prbInstance.destroy();
-                            prbInstance = null;
-                            await mountPaymentRequest();
-                        }
+                        if (await validateCheckout()) return;
+                        if (paymentRequestInstance !== request) return;
+
+                        resetPaymentRequest();
+                        await renderPaymentRequest();
                     },
+                    validate: validateCheckout,
                     createOrder: async () => {
                         const wire = getWireComponent();
-                        if (wire) {
-                            await wire.call('initializeRevolutOrder');
-                            return { publicId: wire.get('publicId') };
+                        if (!wire) {
+                            throw new Error(methodDisplayName + ' Magewire component is unavailable.');
                         }
-                        return { publicId: null };
+
+                        await wire.call('initializeRevolutOrder');
+                        const publicId = wire.get('publicId');
+                        if (!publicId) {
+                            throw new Error(methodDisplayName + ' order could not be initialized.');
+                        }
+
+                        return { publicId: publicId };
                     },
                     onSuccess: async () => {
                         showLoader();
@@ -166,7 +301,7 @@ declare(strict_types=1);
                         };
 
                         window.addEventListener(
-                            'order:place:revolut_payment_request:error',
+                            errorEventName,
                             handlePlacementError,
                             { once: true }
                         );
@@ -177,7 +312,7 @@ declare(strict_types=1);
                             placementError = error;
                         } finally {
                             window.removeEventListener(
-                                'order:place:revolut_payment_request:error',
+                                errorEventName,
                                 handlePlacementError
                             );
                         }
@@ -198,79 +333,67 @@ declare(strict_types=1);
                     onError: (error) => {
                         hideLoader();
                         showPlaceOrderButton();
-                        hyvaCheckout.payment.dispatchExceptionMessage(error.message || 'An error occurred', 'error');
-                    }
+                        hyvaCheckout.payment.dispatchExceptionMessage(
+                            error.message || 'An error occurred',
+                            'error'
+                        );
+                    },
                 });
 
-                const canMakePayment = await prbInstance.canMakePayment();
-                if (canMakePayment) {
-                    prbInstance.render();
+                paymentRequestInstance = request;
+                return request;
+            };
+
+            const renderPaymentRequest = async () => {
+                if (!await checkCapability()) return;
+
+                const request = paymentRequestInstance;
+                if (!request || !attachPaymentRequestTarget()) return;
+
+                try {
+                    await request.render();
+                    if (paymentRequestInstance !== request) {
+                        return;
+                    }
+
                     hidePlaceOrderButton();
-                    refineWalletLabel();
-                    return;
-                }
+                } catch (error) {
+                    if (paymentRequestInstance !== request) return;
 
-                targetEl.style.display = 'none';
-                hyvaCheckout.payment.dispatchExceptionMessage('Apple Pay / Google Pay is not available on this device.', 'error');
-                prbInstance.destroy();
-                prbInstance = null;
+                    request.destroy();
+                    paymentRequestInstance = null;
+                    isAvailable = false;
+                    applyAvailability();
+                }
             };
 
-            const recoverFromOrderPlacementFailure = async error => {
-                const wire = getWireComponent();
-                if (!wire) {
-                    throw new Error('Payment Request Magewire component is unavailable.');
-                }
-
-                const message = error && error.message
-                    ? error.message
-                    : 'Something went wrong while processing your order.';
-
-                await wire.call('cancelRevolutOrder', message);
-                await registeredMethod.uninitialize();
-                await registeredMethod.initialize();
-            };
-
-            registeredMethod = hyvaCheckout.payment.registerMethod({
-                code: 'revolut_payment_request',
-
+            hyvaCheckout.payment.registerMethod({
+                code: methodCode,
                 method: {
-                    initialize: async function () {
-                        const RevolutCheckout = await loadSdk();
-                        if (!RevolutCheckout) return;
-
-                        revolutCheckout = RevolutCheckout;
-                        await mountPaymentRequest();
-                    },
-
-                    uninitialize: async function () {
+                    initialize: renderPaymentRequest,
+                    uninitialize: function () {
                         showPlaceOrderButton();
-                        
-                        if (prbInstance) {
-                            prbInstance.destroy();
-                            prbInstance = null;
-                        }
+                        // Keep the capability-checked request so reselecting the method does not create a duplicate.
+                        hidePaymentRequestTarget();
                     },
-
-                    validate: async function() {
+                    validate: async function () {
                         return true;
                     },
-                }
+                },
             });
 
-            refineWalletLabel();
+            applyAvailability();
+            checkCapability();
+
             if (window.Magewire && typeof Magewire.hook === 'function') {
-                Magewire.hook('message.processed', refineWalletLabel);
+                Magewire.hook('message.processed', applyAvailability);
             }
 
-            window.addEventListener('payment:method:refresh', async () => {
-                if (!prbInstance) return;
+            window.addEventListener('payment:method:refresh', async (event) => {
+                if (!event.detail || event.detail.method !== methodCode || !paymentRequestInstance) return;
 
-                await registeredMethod.uninitialize();
-                await registeredMethod.initialize();
-                refineWalletLabel();
+                resetPaymentRequest();
+                await renderPaymentRequest();
             });
         });
     })();
-</script>
-<?php isset($hyvaCsp) && $hyvaCsp->registerInlineScript() ?>

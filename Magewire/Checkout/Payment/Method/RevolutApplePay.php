@@ -5,10 +5,10 @@ namespace Revolut\PaymentHyva\Magewire\Checkout\Payment\Method;
 
 use Revolut\Payment\Model\Ui\ConfigProvider;
 
-class RevolutPaymentRequest extends AbstractRevolutMethod
+class RevolutApplePay extends AbstractRevolutMethod
 {
     protected function getMethodCode(): string
     {
-        return ConfigProvider::REVOLUT_PAYMENT_REQUEST_CODE;
+        return ConfigProvider::REVOLUT_APPLE_PAY_CODE;
     }
 }

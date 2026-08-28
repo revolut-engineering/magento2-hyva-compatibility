@@ -69,20 +69,28 @@ declare(strict_types=1);
             }
 
             const loadSdk = () => {
-                return new Promise((resolve) => {
-                    if (window.RevolutCheckout) {
-                        resolve(window.RevolutCheckout);
-                        return;
-                    }
+                if (window.RevolutCheckout) {
+                    return Promise.resolve(window.RevolutCheckout);
+                }
+                if (window.revolutCheckoutSdkPromise) {
+                    return window.revolutCheckoutSdkPromise;
+                }
+
+                window.revolutCheckoutSdkPromise = new Promise((resolve) => {
                     if (!revolutConfig || !revolutConfig.revolutSdk) {
                         resolve(null);
                         return;
                     }
+
                     const script = document.createElement('script');
+                    script.id = 'revolut-checkout-sdk';
                     script.src = revolutConfig.revolutSdk;
-                    script.onload = () => resolve(window.RevolutCheckout);
+                    script.onload = () => resolve(window.RevolutCheckout || null);
+                    script.onerror = () => resolve(null);
                     document.head.appendChild(script);
                 });
+
+                return window.revolutCheckoutSdkPromise;
             };
 
             const destroyUpsellInstance = () => {
@@ -384,8 +392,8 @@ declare(strict_types=1);
                 }
             });
 
-            window.addEventListener('payment:method:refresh', async () => {
-                if (!cardInstance) return;
+            window.addEventListener('payment:method:refresh', async (event) => {
+                if (!event.detail || event.detail.method !== 'revolut_card' || !cardInstance) return;
 
                 await registeredMethod.uninitialize();
                 revolutSdk = null;

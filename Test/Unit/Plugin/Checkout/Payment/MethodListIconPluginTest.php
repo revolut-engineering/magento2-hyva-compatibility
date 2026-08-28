@@ -175,20 +175,36 @@ class MethodListIconPluginTest extends TestCase
         );
     }
 
-    public function testRevolutPaymentRequestUsesWalletIconsOnly()
+    public function testGooglePayUsesGooglePayIconOnly()
     {
         $this->configProviderMock->method('getConfig')
             ->willReturn($this->configWithBrands(['visa', 'mastercard', 'amex']));
 
         $captured = $this->captureCreate();
 
-        $result = $this->resultWithData(['label' => 'Apple Pay / Google Pay']);
-        $method = $this->methodWithCode(ConfigProvider::REVOLUT_PAYMENT_REQUEST_CODE);
+        $result = $this->resultWithData(['label' => 'Google Pay']);
+        $method = $this->methodWithCode(ConfigProvider::REVOLUT_GOOGLE_PAY_CODE);
 
         $this->plugin->afterGetMethodMetaData($this->subjectMock, $result, $this->parentMock, $method);
 
         $icons = $captured->arg['data']['icon'];
-        $this->assertSame([self::SRC_APPLE_PAY, self::SRC_GOOGLE_PAY], array_column($icons, 'src'));
+        $this->assertSame([self::SRC_GOOGLE_PAY], array_column($icons, 'src'));
+    }
+
+    public function testApplePayUsesApplePayIconOnly()
+    {
+        $this->configProviderMock->method('getConfig')
+            ->willReturn($this->configWithBrands(['visa', 'mastercard', 'amex']));
+
+        $captured = $this->captureCreate();
+
+        $result = $this->resultWithData(['label' => 'Apple Pay']);
+        $method = $this->methodWithCode(ConfigProvider::REVOLUT_APPLE_PAY_CODE);
+
+        $this->plugin->afterGetMethodMetaData($this->subjectMock, $result, $this->parentMock, $method);
+
+        $icons = $captured->arg['data']['icon'];
+        $this->assertSame([self::SRC_APPLE_PAY], array_column($icons, 'src'));
     }
 
     public function testGetConfigThrowingDisablesAmexAndLogs()

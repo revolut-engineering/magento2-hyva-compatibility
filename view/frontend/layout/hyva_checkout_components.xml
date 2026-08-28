@@ -20,12 +20,21 @@
                 </arguments>
             </block>
 
-            <block name="checkout.payment.method.revolut_payment_request"
-                   as="revolut_payment_request"
-                   template="Revolut_PaymentHyva::payment/method/revolut_payment_request.phtml"
+            <block name="checkout.payment.method.revolut_google_pay"
+                   as="revolut_google_pay"
+                   template="Revolut_PaymentHyva::payment/method/revolut_google_pay.phtml"
                    after="checkout.payment.method.revolut_pay">
                 <arguments>
-                    <argument name="magewire" xsi:type="object">Revolut\PaymentHyva\Magewire\Checkout\Payment\Method\RevolutPaymentRequest</argument>
+                    <argument name="magewire" xsi:type="object">Revolut\PaymentHyva\Magewire\Checkout\Payment\Method\RevolutGooglePay</argument>
+                </arguments>
+            </block>
+
+            <block name="checkout.payment.method.revolut_apple_pay"
+                   as="revolut_apple_pay"
+                   template="Revolut_PaymentHyva::payment/method/revolut_apple_pay.phtml"
+                   after="checkout.payment.method.revolut_google_pay">
+                <arguments>
+                    <argument name="magewire" xsi:type="object">Revolut\PaymentHyva\Magewire\Checkout\Payment\Method\RevolutApplePay</argument>
                 </arguments>
             </block>
         </referenceBlock>

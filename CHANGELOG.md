@@ -1,4 +1,7 @@
 # Changelog
+## 1.1.5
+- Added independent Google Pay and Apple Pay support to Hyvä Checkout
+
 ## 1.1.4
 - Recover the checkout after a failed order placement so the shopper can retry
 

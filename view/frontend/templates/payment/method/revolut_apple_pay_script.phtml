@@ -1,0 +1,18 @@
+<?php
+declare(strict_types=1);
+
+/** @var \Revolut\PaymentHyva\Block\Checkout\Payment\RevolutScript $block */
+$walletConfig = [
+    'methodCode' => 'revolut_apple_pay',
+    'preferredPaymentMethod' => 'applePay',
+    'targetId' => 'revolut-apple-pay-component',
+    'magewireComponentName' => 'checkout.payment.method.revolut_apple_pay',
+    'buttonStyleConfigKey' => 'applePayButtonStyle',
+    'errorEventName' => 'order:place:revolut_apple_pay:error',
+    'methodDisplayName' => 'Apple Pay',
+];
+?>
+<script>
+<?php require $block->getTemplateFile('Revolut_PaymentHyva::payment/method/revolut_payment_request_script.phtml'); ?>
+</script>
+<?php isset($hyvaCsp) && $hyvaCsp->registerInlineScript() ?>

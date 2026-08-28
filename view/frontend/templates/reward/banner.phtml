@@ -69,7 +69,8 @@
 
             switch (config.paymentMethodCode) {
                 case config.RevolutCardMethodCode:
-                case config.RevolutPaymentRequestMethodCode:
+                case config.RevolutGooglePayMethodCode:
+                case config.RevolutApplePayMethodCode:
                     upsell.enrollmentConfirmationBanner.mount(widget, {
                         orderToken: config.orderPublicId,
                         promotionalBanner: true,

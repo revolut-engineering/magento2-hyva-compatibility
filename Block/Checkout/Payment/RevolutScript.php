@@ -61,6 +61,20 @@ class RevolutScript extends Template
     }
 
     /**
+     * Quote currency used by wallet capability checks before their method content is rendered.
+     *
+     * @return string
+     */
+    public function getQuoteCurrencyCode(): string
+    {
+        try {
+            return (string) $this->checkoutSession->getQuote()->getQuoteCurrencyCode();
+        } catch (\Throwable) {
+            return '';
+        }
+    }
+
+    /**
      * Routes of every step in the active checkout, as a JSON array.
      *
      * The order is placed from the payment step for all Revolut methods (the card iframe must stay

@@ -10,18 +10,18 @@ use Rakit\Validation\Validator;
 use Revolut\Payment\Api\OrderManagementInterface;
 use Revolut\Payment\Model\Ui\ConfigProvider;
 use Revolut\PaymentHyva\Magewire\Checkout\Payment\Method\AbstractRevolutMethod;
-use Revolut\PaymentHyva\Magewire\Checkout\Payment\Method\RevolutPaymentRequest;
+use Revolut\PaymentHyva\Magewire\Checkout\Payment\Method\RevolutApplePay;
 
-class RevolutPaymentRequestTest extends TestCase
+class RevolutApplePayTest extends TestCase
 {
     /**
-     * @var RevolutPaymentRequest
+     * @var RevolutApplePay
      */
     private $method;
 
     protected function setUp(): void
     {
-        $this->method = new RevolutPaymentRequest(
+        $this->method = new RevolutApplePay(
             $this->createMock(Validator::class),
             $this->createMock(SessionCheckout::class),
             $this->createMock(OrderManagementInterface::class),
@@ -35,13 +35,13 @@ class RevolutPaymentRequestTest extends TestCase
         $this->assertInstanceOf(AbstractRevolutMethod::class, $this->method);
     }
 
-    public function testGetMethodCodeReturnsPaymentRequestCode()
+    public function testGetMethodCodeReturnsApplePayCode()
     {
         $reflectionMethod = new \ReflectionMethod($this->method, 'getMethodCode');
         $reflectionMethod->setAccessible(true);
 
         $this->assertSame(
-            ConfigProvider::REVOLUT_PAYMENT_REQUEST_CODE,
+            ConfigProvider::REVOLUT_APPLE_PAY_CODE,
             $reflectionMethod->invoke($this->method)
         );
     }

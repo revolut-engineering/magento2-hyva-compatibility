@@ -162,6 +162,26 @@ class RevolutScriptTest extends TestCase
         $this->assertSame(0.0, $this->revolutScript->getGrandTotal());
     }
 
+    public function testGetQuoteCurrencyCodeReturnsQuoteCurrency()
+    {
+        $quoteMock = $this->getMockBuilder(Quote::class)
+            ->disableOriginalConstructor()
+            ->addMethods(['getQuoteCurrencyCode'])
+            ->getMock();
+        $quoteMock->method('getQuoteCurrencyCode')->willReturn('GBP');
+        $this->checkoutSessionMock->method('getQuote')->willReturn($quoteMock);
+
+        $this->assertSame('GBP', $this->revolutScript->getQuoteCurrencyCode());
+    }
+
+    public function testGetQuoteCurrencyCodeReturnsEmptyStringWhenGetQuoteThrows()
+    {
+        $this->checkoutSessionMock->method('getQuote')
+            ->willThrowException(new \RuntimeException('no quote'));
+
+        $this->assertSame('', $this->revolutScript->getQuoteCurrencyCode());
+    }
+
     private function quoteWithGrandTotal(): \PHPUnit\Framework\MockObject\MockObject
     {
         return $this->getMockBuilder(Quote::class)
